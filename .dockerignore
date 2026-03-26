@@ -1,0 +1,19 @@
+# Git
+.git/
+
+# Python env
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Secret passwords (CRITICAL: Do not upload to images!)
+.env
+
+# Diagnostic tools
+test_hf.py
+debug_step.py
+
+# Editor
+.vscode/
+.idea/
