@@ -48,8 +48,9 @@ python -m financial_audit_env.server.app
 
 ---
 
-<details>
-<summary><strong>Architecture, Data Flow & Design Decisions</strong></summary>
+---
+
+## Architecture, Data Flow & Design Decisions
 
 - **System Architecture:** Client (`POST /reset`) -> FastAPI Server -> Data Generator (Plants Errors) -> Returns JSON Observation -> Client (`POST /step`) -> Grader Module -> Returns F1 Reward.
 - **Design Decision - Synthetic Data:** Relies on programmatic string and math manipulation rather than static datasets to prevent AI memorization.
@@ -57,30 +58,24 @@ python -m financial_audit_env.server.app
 - **Trade-offs:** CPU-bound data generation causes minor latency spikes, favored over pre-baked datasets to maximize environmental variation.
 - **Failure Handling:** Invalid JSON schemas from LLM agents are immediately rejected with descriptive 400 errors to guide model regeneration.
 
-</details>
-
 ---
 
-<details>
-<summary><strong>Challenges & Key Learnings</strong></summary>
+## Challenges & Key Learnings
 
 - **Hardest Technical Issue:** Resolving complex type-checker inference failures (Pyre/Pylance) while manipulating deeply nested, dynamically generated dictionaries.
 - **What Broke:** Early implementation Pydantic schema mismatches dropped valid AI findings.
 - **Key Learning:** Explicit type hinting of complex data structures is critical for stable static analysis, and deterministic scoring requires mathematically sound, seed-based ground-truth generation logic.
 
-</details>
-
 ---
 
-<details>
-<summary><strong>Tasks, Action Space & Observation Space (Mandatory Spec)</strong></summary>
+## Tasks, Action Space & Observation Space (Mandatory Spec)
 
 ### Tasks & Expected Difficulty
 | Task | Difficulty | Data Provided | Planted Errors |
 |------|-----------|---------------|----------------|
-| **Expense Policy Audits** | 🟢 Easy | 15 claims + policy definition | 6 violations |
-| **Invoice 3-Way Math** | 🟡 Medium | 10 POs + 10 GRNs + 12 Invoices | 8 discrepancies |
-| **GST Reconciliation** | 🔴 Hard | 30 book entries + 30 GSTR-2B entries | 12 mismatches |
+| **Expense Policy Audits** | Easy | 15 claims + policy definition | 6 violations |
+| **Invoice 3-Way Math** | Medium | 10 POs + 10 GRNs + 12 Invoices | 8 discrepancies |
+| **GST Reconciliation** | Hard | 30 book entries + 30 GSTR-2B entries | 12 mismatches |
 
 ### Action Space (`Pydantic AuditAction`)
 ```json
@@ -121,9 +116,7 @@ python -m financial_audit_env.server.app
 | **Invoice Match** | Medium | Llama-3.1-8B-Instruct | `0.0000` |
 | **GST Returns** | Hard | Llama-3.1-8B-Instruct | `0.0000` |
 
-</details>
-
----
+ ---
 
 ## Future Scope
 - **Scalability:** Migrate data generation to asynchronous background workers to support high-throughput parallel reinforcement learning.
