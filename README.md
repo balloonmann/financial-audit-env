@@ -31,13 +31,28 @@ This environment bridges that gap by programmatically generating realistic India
 
 ## Quick Start
 ```bash
-git clone https://github.com/YourUsername/financial-audit-env.git
+git clone https://github.com/balloonmann/financial-audit-env.git
 cd financial-audit-env
 python -m venv venv
 .\venv\Scripts\activate
 pip install -e .
 python -m financial_audit_env.server.app
 ```
+ 
+ ---
+ 
+ ## Running with Docker
+ For a zero-setup experience, copy-paste these 3 lines to clone and launch:
+ 
+ ```bash
+ # 1. Clone the repository
+ git clone https://github.com/balloonmann/financial-audit-env.git && cd financial-audit-env
+ 
+ # 2. Build and Run the server
+ docker build -t financial-audit-env . && docker run -p 8000:8000 financial-audit-env
+ ```
+ Check health at `http://localhost:8000/health`.
+ Check health at `http://localhost:8000/health`.
 
 ---
 
