@@ -1,0 +1,257 @@
+Metadata-Version: 2.4
+Name: financial-audit-env
+Version: 1.0.0
+Summary: OpenEnv-compatible RL environment for financial auditing tasks
+Author: Harshit
+License: MIT
+Project-URL: Homepage, https://github.com/Harshit/financial-audit-env
+Project-URL: Repository, https://github.com/Harshit/financial-audit-env
+Keywords: openenv,reinforcement-learning,financial-audit,ai-agent
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.104.0
+Requires-Dist: uvicorn>=0.24.0
+Requires-Dist: pydantic>=2.5.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: openai>=1.0.0
+Provides-Extra: openenv
+Requires-Dist: openenv-core>=0.2.0; extra == "openenv"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: httpx>=0.25.0; extra == "dev"
+
+# 🏦 Financial Audit Environment
+
+[![OpenEnv Compatible](https://img.shields.io/badge/OpenEnv-Compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-green)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+An **OpenEnv-compatible reinforcement learning environment** for training AI agents on real-world financial auditing tasks. Agents audit synthetic financial documents — expense reports, invoices, and GST returns — to detect planted errors, policy violations, and compliance mismatches.
+
+Built for the [Meta PyTorch Hackathon](https://www.scaler.com/school-of-technology/meta-pytorch-hackathon).
+
+---
+
+## 🎯 Why Financial Auditing?
+
+Financial auditing is a **massive, manual, high-stakes** real-world task:
+
+- **Invoice processing** alone is a [$3B+ market](https://www.marketsandmarkets.com) — companies like AppZen, MindBridge, and Brex automate it
+- In India, CA firms spend **16+ hours/month** per 100 clients on GST reconciliation alone
+- BCom graduates and junior accountants do this work manually every day
+- Errors have **deterministic ground truth** — perfect for RL reward signals
+
+This environment lets AI agents **learn to audit** through the standard `reset()` / `step()` / `state()` API.
+
+---
+
+## 📋 Tasks
+
+Three tasks with increasing difficulty:
+
+| Task | Difficulty | Data | Errors | Max Steps |
+|------|-----------|------|--------|-----------|
+| **Expense Policy Violations** | 🟢 Easy | 15 expense claims + policy doc | 6 violations | 5 |
+| **Invoice Three-Way Match** | 🟡 Medium | 10 POs + 10 GRNs + 12 invoices | 8 discrepancies | 8 |
+| **GST Return Reconciliation** | 🔴 Hard | 30 book entries + 30 GSTR-2B entries | 12 mismatches | 10 |
+
+### Task 1: Expense Policy Violation Detection (Easy)
+
+Detect violations in employee expense claims against company policy:
+- `over_limit` — amount exceeds category limit
+- `wrong_category` — personal item claimed as business
+- `duplicate_claim` — same receipt submitted twice
+- `weekend_expense` — business expense on weekend without approval
+- `missing_receipt` — no receipt for high-value expense
+- `unapproved_vendor` — vendor not on approved list
+
+### Task 2: Invoice Three-Way Match Audit (Medium)
+
+Cross-reference Purchase Orders, Goods Receipt Notes, and Vendor Invoices:
+- `price_mismatch`, `quantity_mismatch`, `duplicate_invoice`
+- `unmatched_invoice`, `tax_error`, `total_mismatch`
+- `vendor_mismatch`, `date_anomaly`
+
+### Task 3: GST Return Reconciliation (Hard)
+
+Reconcile purchase register against GSTR-2B government data:
+- `missing_in_gstr2b`, `missing_in_books`, `amount_mismatch`
+- `tax_rate_mismatch`, `gstin_mismatch`, `date_mismatch`
+- `duplicate_entry`, `invalid_gstin`, `wrong_tax_type`
+- `itc_ineligible`, `late_claim`, `excess_claim`
+
+---
+
+## 🔌 Action & Observation Spaces
+
+### Action Space (`AuditAction`)
+
+```python
+{
+    "findings": [
+        {
+            "document_id": "EXP-010",          # Which document has the error
+            "error_type": "over_limit",         # Type of error found
+            "description": "Meal expense of 4500 exceeds 1500 limit",
+            "suggested_fix": "Reject claim, request revised amount"
+        }
+    ],
+    "submit_final": true   # End episode and get final score
+}
+```
+
+### Observation Space (`AuditObservation`)
+
+```python
+{
+    "task_id": "expense_audit",
+    "task_description": "Review employee expense claims...",
+    "documents": {                  # Financial data to audit
+        "expenses": [...],
+        "policy": {...}
+    },
+    "findings_so_far": [...],       # Previously submitted findings
+    "feedback": "Step 1/5: ...",    # Environment feedback
+    "step_number": 1,
+    "max_steps": 5,
+    "done": false,
+    "reward": 0.15
+}
+```
+
+---
+
+## 📊 Reward Function
+
+Dense, per-step rewards (not sparse end-of-episode):
+
+| Signal | Value | Trigger |
+|--------|-------|---------|
+| True positive | +0.15 | Correct (document_id, error_type) match |
+| False positive | -0.05 | Finding doesn't match any ground truth |
+| Step penalty | -0.02 | Every step (discourages stalling) |
+| Recall bonus | +0.30 | Final submission with recall ≥ 0.8 |
+| Precision bonus | +0.10 | Final submission with precision ≥ 0.9 |
+| Low recall penalty | -0.20 | Final submission with recall < 0.3 |
+
+**Grader score** (for evaluation): F1 score, always in `[0.0, 1.0]`.
+
+---
+
+## 🚀 Quick Start
+
+### Install
+
+```bash
+pip install -e .
+```
+
+### Run Server Locally
+
+```bash
+uvicorn financial_audit_env.server.app:app --host 0.0.0.0 --port 8000
+```
+
+### Interact with the Environment
+
+```python
+import requests
+
+# Reset with a task
+resp = requests.post("http://localhost:8000/reset", json={
+    "task_id": "expense_audit",
+    "seed": 42
+})
+obs = resp.json()["observation"]
+print(obs["task_description"])
+print(obs["documents"]["expenses"][:3])  # First 3 expenses
+
+# Submit findings
+resp = requests.post("http://localhost:8000/step", json={
+    "action": {
+        "findings": [
+            {
+                "document_id": "EXP-010",
+                "error_type": "over_limit",
+                "description": "Meal expense 4500 exceeds 1500 limit",
+                "suggested_fix": "Reject and request revision"
+            }
+        ],
+        "submit_final": True
+    }
+})
+result = resp.json()
+print(f"Score: {result['reward']}")
+```
+
+### Run Baseline (Meta Llama)
+
+```bash
+export HF_TOKEN=your_huggingface_token
+python -m financial_audit_env.baseline --base-url http://localhost:8000
+```
+
+### Docker
+
+```bash
+docker build -f financial_audit_env/server/Dockerfile -t financial-audit-env financial_audit_env/
+docker run -p 8000:8000 -e HF_TOKEN=your_token financial-audit-env
+```
+
+---
+
+## 📁 Project Structure
+
+```
+financial_audit_env/
+├── __init__.py              # Package exports
+├── models.py                # Pydantic Action/Observation/State (strict validation)
+├── client.py                # EnvClient (OpenEnv + standalone HTTP)
+├── baseline.py              # Llama baseline via HF Inference API
+├── openenv.yaml             # OpenEnv manifest
+├── pyproject.toml           # Package config
+├── README.md                ← You are here
+├── server/
+│   ├── environment.py       # Core reset/step/state logic
+│   ├── data_generator.py    # Synthetic financial data with planted errors
+│   ├── graders.py           # F1-based deterministic graders
+│   ├── tasks.py             # Task definitions (easy/medium/hard)
+│   ├── security.py          # Rate limiting, OWASP headers, input validation
+│   ├── app.py               # FastAPI server + custom endpoints
+│   ├── requirements.txt     # Docker dependencies
+│   └── Dockerfile           # Container (non-root, health check)
+```
+
+---
+
+## 🔒 Security
+
+- **Rate limiting**: 30 requests/minute per IP on all endpoints
+- **Input validation**: Pydantic strict mode, max string lengths, sanitized inputs
+- **OWASP headers**: X-Frame-Options, CSP, HSTS, XSS-Protection
+- **No stack traces**: Custom error handlers hide internals
+- **Non-root Docker**: Container runs as unprivileged user
+- **Secure API keys**: Environment variables only, masked in logs
+
+---
+
+## 🤝 Built With
+
+- **[OpenEnv](https://github.com/meta-pytorch/OpenEnv)** — Environment framework by Meta
+- **[Meta Llama 3.1](https://huggingface.co/meta-llama)** — Baseline AI model
+- **[HuggingFace Inference API](https://huggingface.co/inference-api)** — Free model hosting
+- **[FastAPI](https://fastapi.tiangolo.com/)** — Server framework
+- **[Pydantic](https://pydantic.dev/)** — Data validation
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
