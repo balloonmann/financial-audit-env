@@ -1,0 +1,22 @@
+# Python Environments
+venv/
+.venv/
+env/
+.env
+
+# API Keys and Secrets (CRITICAL)
+HF_TOKEN
+OPENAI_API_KEY
+
+# Python Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and Editor
+.vscode/
+.idea/
+
+# Type Checkers and Testing
+.pyre/
+.pytest_cache/

@@ -26,6 +26,10 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("baseline")
@@ -38,7 +42,7 @@ logger = logging.getLogger("baseline")
 MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 # HF Inference API base URL (OpenAI-compatible)
-HF_INFERENCE_URL = "https://router.hugging-face.cn/v1/"
+HF_INFERENCE_URL = "https://router.huggingface.co/v1/"
 
 # Tasks to run baseline on
 TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation"]

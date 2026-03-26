@@ -111,6 +111,16 @@ python -m financial_audit_env.server.app
   "reward": 0.15
 }
 ```
+
+### Baseline Scores (Meta Llama 3.1 8B)
+*Scores generated via HuggingFace Inference API.*
+
+| Task | Difficulty | Model | F1 Grader Score |
+|------|------------|-------|-----------------|
+| **Expense Audits** | Easy | Llama-3.1-8B-Instruct | `0.3158` |
+| **Invoice Match** | Medium | Llama-3.1-8B-Instruct | `0.0000` |
+| **GST Returns** | Hard | Llama-3.1-8B-Instruct | `0.0000` |
+
 </details>
 
 ---
