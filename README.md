@@ -6,13 +6,6 @@ An OpenEnv-compatible reinforcement learning environment for training AI models 
 
 ---
 
-## Demo / Visual Proof
-[Insert Demo Link or GIF Here]
-
-Demonstrates an AI agent querying the environment, receiving synthetic invoices, and being graded on its findings.
-
----
-
 ## Tech Stack
 - **Frontend:** Headless REST API
 - **Backend:** Python, FastAPI, Uvicorn, Pydantic
@@ -21,7 +14,7 @@ Demonstrates an AI agent querying the environment, receiving synthetic invoices,
 
 ---
 
-## Problem & Why This Wins
+## Problem
 Financial auditing requires thousands of manual hours for invoice and GST reconciliation. Existing RL environments focus on toy games rather than complex, real-world business logic.
 
 This environment bridges that gap by programmatically generating realistic Indian financial documents with mathematically verifiable planted errors, providing a deterministic validation framework for autonomous agents.
@@ -123,7 +116,3 @@ python -m financial_audit_env.server.app
 - **Production Considerations:** Expand GST formats to support international tax structures beyond the regional framework.
 - **Feature Roadmap:** Introduce multi-agent collaborative auditing tasks.
 
----
-
-## License
-MIT License.
