@@ -52,11 +52,9 @@ python -m financial_audit_env.server.app
  docker build -t financial-audit-env . && docker run -p 8000:8000 financial-audit-env
  ```
  Check health at `http://localhost:8000/health`.
- Check health at `http://localhost:8000/health`.
 
 ---
 
----
 
 ## Architecture, Data Flow & Design Decisions
 
