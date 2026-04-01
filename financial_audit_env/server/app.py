@@ -67,10 +67,11 @@ setup_security(app)
 # ---------------------------------------------------------------------------
 
 class ResetRequest(BaseModel):
-    """Request body for the /reset endpoint."""
     task_id: Optional[str] = "expense_audit"
     seed: Optional[int] = 42
     episode_id: Optional[str] = None
+
+    model_config = {"extra": "allow"}
 
 
 class StepRequest(BaseModel):
@@ -99,7 +100,7 @@ async def health_check():
 
 
 @app.post("/reset")
-async def reset_endpoint(request: ResetRequest):
+async def reset_endpoint(request: ResetRequest = ResetRequest()):
     """
     Reset the environment for a new episode.
 
