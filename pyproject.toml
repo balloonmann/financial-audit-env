@@ -30,7 +30,11 @@ dependencies = [
     "requests>=2.31.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
+    "openenv-core>=0.2.0",
 ]
+
+[project.scripts]
+server = "financial_audit_env.server.app:main"
 
 [project.optional-dependencies]
 openenv = ["openenv-core>=0.2.0"]
