@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Financial Audit Environment — Inference Script
-===========================================
+==============================================
 MANDATORY CONSTRAINTS MET:
 - Uses API_BASE_URL, MODEL_NAME, and HF_TOKEN from environment.
 - Placed in the root directory of the project.
 - Uses the standard OpenAI Client for all LLM calls.
+- Emits structured stdout logs: [START], [STEP], [END]
 
 Usage:
   export API_BASE_URL=https://router.huggingface.co/v1/
@@ -20,7 +21,7 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 from openai import OpenAI
@@ -32,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("inference")
 
 # ---------------------------------------------------------------------------
-# Configuration from Environment Variables
+# Configuration from Environment Variables (MANDATORY)
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
@@ -40,6 +41,51 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation"]
 SEED = 42
+BENCHMARK = "financial_audit_env"
+TEMPERATURE = 0.1
+MAX_TOKENS = 4096
+MAX_STEPS = 5  # Max steps per task (matches our env config)
+SUCCESS_SCORE_THRESHOLD = 0.5
+
+# ---------------------------------------------------------------------------
+# MANDATORY Structured Logging: [START], [STEP], [END]
+# ---------------------------------------------------------------------------
+
+def log_start(task: str, env: str, model: str) -> None:
+    """Emit the [START] structured log line."""
+    print(
+        f"[START] task={task} env={env} model={model}",
+        flush=True,
+    )
+
+
+def log_step(
+    step: int,
+    action: str,
+    reward: float,
+    done: bool,
+    error: Optional[str] = None,
+) -> None:
+    """Emit the [STEP] structured log line."""
+    error_str = error if error else "none"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.4f} done={done} error={error_str}",
+        flush=True,
+    )
+
+
+def log_end(
+    success: bool,
+    steps: int,
+    score: float,
+    rewards: List[float],
+) -> None:
+    """Emit the [END] structured log line."""
+    print(
+        f"[END] success={success} steps={steps} score={score:.4f} rewards={json.dumps(rewards)}",
+        flush=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # LLM Prompts & Parsing
@@ -115,80 +161,125 @@ def run_agent_single_task(
     seed: int = SEED,
 ) -> Dict[str, Any]:
     session = requests.Session()
+    rewards: List[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
 
-    # 1. Reset Environment
-    logger.info(f"[{task_id}] Resetting environment...")
-    reset_resp = session.post(
-        f"{env_url}/reset",
-        json={"task_id": task_id, "seed": seed},
-    )
-    reset_resp.raise_for_status()
-    obs = reset_resp.json().get("observation", reset_resp.json())
+    # Emit [START] log
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
-    # 2. Extract Data & Allowed Errors
-    tasks_resp = session.get(f"{env_url}/tasks")
-    tasks_resp.raise_for_status()
-    task_info = next(t for t in tasks_resp.json()["tasks"] if t["id"] == task_id)
-    error_types = task_info["error_types"]
-
-    prompt = build_task_prompt(obs["task_description"], obs["documents"], error_types)
-    
-    # 3. Call LLM (via OpenAI Client)
-    logger.info(f"[{task_id}] Calling {MODEL_NAME} at {API_BASE_URL}...")
-    start_time = time.time()
-    
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=4096,
-            temperature=0.1,
+        # 1. Reset Environment
+        logger.info(f"[{task_id}] Resetting environment...")
+        reset_resp = session.post(
+            f"{env_url}/reset",
+            json={"task_id": task_id, "seed": seed},
         )
-        response_text = response.choices[0].message.content or ""
-    except Exception as e:
-        logger.error(f"[{task_id}] Inference failed: {e}")
-        response_text = "[]"
-        
-    logger.info(f"[{task_id}] LLM responded in {time.time() - start_time:.1f}s")
+        reset_resp.raise_for_status()
+        obs = reset_resp.json().get("observation", reset_resp.json())
 
-    # 4. Parse & Submit Action
-    findings = parse_llm_findings(response_text)
-    logger.info(f"[{task_id}] Parsed {len(findings)} findings from LLM")
+        # 2. Extract Data & Allowed Errors
+        tasks_resp = session.get(f"{env_url}/tasks")
+        tasks_resp.raise_for_status()
+        task_info = next(t for t in tasks_resp.json()["tasks"] if t["id"] == task_id)
+        error_types = task_info["error_types"]
 
-    action = {
-        "findings": [
-            {
-                "document_id": str(f.get("document_id", "")),
-                "error_type": str(f.get("error_type", "")),
-                "description": str(f.get("description", "No description")),
-                "suggested_fix": str(f.get("suggested_fix", "")) if f.get("suggested_fix") else None,
-            }
-            for f in findings
-        ],
-        "submit_final": True,
-    }
+        prompt = build_task_prompt(obs["task_description"], obs["documents"], error_types)
 
-    step_resp = session.post(f"{env_url}/step", json={"action": action})
-    step_resp.raise_for_status()
+        # 3. Call LLM (via OpenAI Client — MANDATORY)
+        logger.info(f"[{task_id}] Calling {MODEL_NAME} at {API_BASE_URL}...")
+        start_time = time.time()
 
-    # 5. Get Grader Results
-    grader_resp = session.get(f"{env_url}/grader")
-    grader_resp.raise_for_status()
-    grader_data = grader_resp.json()
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE,
+                stream=False,
+            )
+            response_text = response.choices[0].message.content or ""
+        except Exception as e:
+            logger.error(f"[{task_id}] Inference failed: {e}")
+            response_text = "[]"
 
-    result = {
-        "task_id": task_id,
-        "task_name": task_info["name"],
-        "difficulty": task_info["difficulty"],
-        "score": grader_data.get("score", 0.0),
-        "precision": grader_data.get("precision", 0.0),
-        "recall": grader_data.get("recall", 0.0),
-    }
+        logger.info(f"[{task_id}] LLM responded in {time.time() - start_time:.1f}s")
 
-    logger.info(f"[{task_id}] Score: {result['score']:.4f} (P={result['precision']:.2f}, R={result['recall']:.2f})")
+        # 4. Parse & Submit Action
+        findings = parse_llm_findings(response_text)
+        logger.info(f"[{task_id}] Parsed {len(findings)} findings from LLM")
+
+        action = {
+            "findings": [
+                {
+                    "document_id": str(f.get("document_id", "")),
+                    "error_type": str(f.get("error_type", "")),
+                    "description": str(f.get("description", "No description")),
+                    "suggested_fix": str(f.get("suggested_fix", "")) if f.get("suggested_fix") else None,
+                }
+                for f in findings
+            ],
+            "submit_final": True,
+        }
+
+        # Summarize the action for the log
+        action_summary = f"submit_{len(findings)}_findings"
+
+        step_resp = session.post(f"{env_url}/step", json={"action": action})
+        step_resp.raise_for_status()
+        step_data = step_resp.json()
+
+        step_reward = step_data.get("reward", 0.0) or 0.0
+        step_done = step_data.get("done", True)
+        rewards.append(step_reward)
+        steps_taken = 1
+
+        # Emit [STEP] log
+        log_step(
+            step=1,
+            action=action_summary,
+            reward=step_reward,
+            done=step_done,
+            error=None,
+        )
+
+        # 5. Get Grader Results
+        grader_resp = session.get(f"{env_url}/grader")
+        grader_resp.raise_for_status()
+        grader_data = grader_resp.json()
+
+        score = grader_data.get("score", 0.0)
+        success = score >= SUCCESS_SCORE_THRESHOLD
+
+        result = {
+            "task_id": task_id,
+            "task_name": task_info["name"],
+            "difficulty": task_info["difficulty"],
+            "score": score,
+            "precision": grader_data.get("precision", 0.0),
+            "recall": grader_data.get("recall", 0.0),
+        }
+
+        logger.info(f"[{task_id}] Score: {result['score']:.4f} (P={result['precision']:.2f}, R={result['recall']:.2f})")
+
+    except Exception as exc:
+        logger.error(f"[{task_id}] Task failed: {exc}")
+        result = {
+            "task_id": task_id,
+            "task_name": task_id,
+            "difficulty": "unknown",
+            "score": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+        }
+    finally:
+        # Emit [END] log
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
     return result
 
 def main():

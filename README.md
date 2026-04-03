@@ -7,7 +7,6 @@ sdk: docker
 app_port: 8000
 pinned: false
 ---
-<<<<<<< HEAD
 # Financial Audit Environment
 
 An OpenEnv-compatible reinforcement learning environment for training AI models on real-world financial auditing tasks.
@@ -138,16 +137,3 @@ python -m financial_audit_env.server.app
 - **Scalability:** Migrate data generation to asynchronous background workers to support high-throughput parallel reinforcement learning.
 - **Production Considerations:** Expand GST formats to support international tax structures beyond the regional framework.
 - **Feature Roadmap:** Introduce multi-agent collaborative auditing tasks.
-
-=======
----
-title: Financial Audit Env
-emoji: 🏢
-colorFrom: yellow
-colorTo: purple
-sdk: docker
-pinned: false
----
-
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
->>>>>>> 567d2635e4bb98e744e272c5af01ccfa245175f8
