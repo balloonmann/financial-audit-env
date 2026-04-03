@@ -12,7 +12,7 @@ pinned: false
 
 An OpenEnv-compatible environment that teaches AI agents how to audit financial documents. Built for the Meta PyTorch Hackathon.
 
-**[Try the API](https://balloonmann-financial-audit-env.hf.space/docs)** | **[GitHub](https://github.com/balloonmann/financial-audit-env)** | **78 tests passing**
+**[Try the API](https://balloonmann-financial-audit-env.hf.space/docs)** | **78 tests passing**
 
 ## The Problem
 
