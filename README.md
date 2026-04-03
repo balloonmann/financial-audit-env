@@ -10,7 +10,7 @@ pinned: false
 
 # Financial Audit Environment
 
-An OpenEnv-compatible RL environment for financial auditing tasks. Agents operate over synthetic Indian financial documents — expense claims, invoices, GST returns, vendor transactions — and are scored on their ability to identify planted errors via deterministic F1 grading.
+An OpenEnv-compatible RL environment for financial auditing tasks. Agents operate over synthetic Indian financial documents: expense claims, invoices, GST returns, vendor transactions, and are scored on their ability to identify planted errors via deterministic F1 grading.
 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** | **78 tests passing**
 
