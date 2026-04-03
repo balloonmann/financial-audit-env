@@ -10,143 +10,118 @@ pinned: false
 
 # Financial Audit Environment
 
-An **OpenEnv-compatible reinforcement learning environment** that trains AI agents on real-world financial auditing tasks — from simple expense policy checks to complex fraud pattern detection.
+An OpenEnv-compatible environment that teaches AI agents how to audit financial documents. Built for the Meta PyTorch Hackathon.
 
-[![Live Demo](https://img.shields.io/badge/🤗-Live%20Demo-yellow)](https://balloonmann-financial-audit-env.hf.space)
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue)](https://github.com/balloonmann/financial-audit-env)
-[![Tests](https://img.shields.io/badge/tests-78%20passed-brightgreen)]()
-[![Version](https://img.shields.io/badge/version-2.0-blue)]()
+**[Try the API](https://balloonmann-financial-audit-env.hf.space/docs)** | **[GitHub](https://github.com/balloonmann/financial-audit-env)** | **78 tests passing**
 
----
+## The Problem
 
-## What This Does
+Financial auditing is boring, repetitive, and expensive. Companies pay auditors to check thousands of invoices, expense claims, and tax returns by hand. Most of the work is pattern matching: does this invoice match the purchase order? Did this employee exceed their expense limit? Is this vendor's GST number valid?
 
-Financial auditing is the process of checking whether a company's financial records are accurate — invoices match purchase orders, expenses follow policy, GST returns balance, and transactions aren't fraudulent. It's a task that costs businesses **thousands of manual hours** every year.
+This environment turns that process into something an AI agent can learn. It generates fake (but realistic) Indian financial documents, hides errors in them, and scores the agent on how many it finds.
 
-This environment generates **synthetic but realistic Indian financial documents** with mathematically verifiable planted errors. AI agents interact through a REST API: they receive documents, analyze them, submit findings, and get scored on accuracy.
+## What's Inside
 
-**Why it matters:** Instead of training agents on toy games, this environment teaches them to solve a genuine business problem — one where mistakes have real monetary consequences.
+There are 4 tasks, each harder than the last:
 
----
+| Task | Difficulty | What you get | What you find |
+|------|-----------|-------------|--------------|
+| **Expense Policy Audit** | Easy | 19 expense claims + company policy | 7 policy violations (over-limit meals, duplicate receipts, weekend expenses) |
+| **Invoice Three-Way Match** | Medium | 10 purchase orders + 10 goods receipts + 12 invoices | 9 discrepancies (price mismatches, duplicate invoices, wrong tax rates) |
+| **GST Reconciliation** | Hard | 45 book entries + 44 GSTR-2B entries | 12 mismatches (missing entries, invalid GSTINs, excess claims) |
+| **Fraud Detection** | Expert | 84 transactions + 26 vendors | 10 fraud patterns (circular invoicing, shell companies, Benford violations) |
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Backend** | Python 3.11, FastAPI, Uvicorn |
-| **Validation** | Pydantic v2 (strict mode) |
-| **AI Baseline** | OpenAI Client → HuggingFace Inference API → Meta Llama 3.1 8B |
-| **Infrastructure** | Docker, HuggingFace Spaces |
-| **Framework** | OpenEnv (reinforcement learning environment spec) |
-| **Testing** | Pytest (78 tests) |
-
----
-
-## Tasks
-
-The environment includes **4 tasks** with progressive difficulty:
-
-| # | Task | Difficulty | Documents | Planted Errors | What the Agent Must Do |
-|---|------|-----------|-----------|----------------|----------------------|
-| 1 | **Expense Policy Audit** | Easy | 19 expense claims + policy rules | 7 violations | Check if expenses follow company policy (limits, categories, receipts, vendors) |
-| 2 | **Invoice Three-Way Match** | Medium | 10 POs + 10 GRNs + 12 invoices | 9 discrepancies | Cross-match purchase orders ↔ goods receipts ↔ invoices for price/quantity/tax errors |
-| 3 | **GST Return Reconciliation** | Hard | 45 book entries + 44 GSTR-2B entries | 12 mismatches | Reconcile internal books against government GST portal filings |
-| 4 | **Fraud Pattern Detection** | Expert | 84 transactions + 26 vendors | 10 fraud patterns | Detect circular invoicing, shell companies, Benford violations, split invoices, etc. |
-
-Each task includes **red herring entries** — items that look suspicious but are actually correct (e.g., an expense at exactly the limit, a minor ₹1 rounding difference). This forces agents to be precise, not just paranoid.
-
----
+Every task also includes red herrings: entries that look suspicious but are actually fine. An expense at exactly the daily limit? That's legal. A ₹1 rounding difference on an invoice? That's normal. The agent has to tell the difference.
 
 ## How It Works
 
+The environment runs as a REST API. Here's the basic flow:
+
+1. **Reset** - Tell the environment which task you want. It generates fresh data with hidden errors.
+2. **Read** - Look at the documents in the response. Figure out what's wrong.
+3. **Submit** - Send your findings (which document, what type of error, why).
+4. **Score** - The environment checks your findings against the ground truth and gives you an F1 score.
+
 ```
-Agent                          Environment
-  │                                │
-  │── POST /reset ────────────────▶│  Generate fresh data with planted errors
-  │◀─────────── observation ───────│  Return documents + task description
-  │                                │
-  │── POST /step (findings) ──────▶│  Grade each finding against ground truth
-  │◀─────── reward + feedback ─────│  +0.15 per correct, -0.05 per false positive
-  │                                │
-  │── POST /step (submit_final) ──▶│  Compute final F1 score
-  │◀────── F1 score + details ─────│  Weighted F1, confusion matrix, risk score
+POST /reset  {"task_id": "expense_audit", "seed": 42}
+             -> Returns documents + task description
+
+POST /step   {"action": {"findings": [...], "submit_final": true}}
+             -> Returns reward + feedback
+
+GET /grader  -> Returns F1 score, confusion matrix, risk assessment
 ```
 
-### Scoring
+The grading goes beyond a simple pass/fail:
 
-The primary metric is **F1 score** (0.0–1.0) based on `(document_id, error_type)` tuple matching. The grading system also provides:
+- **F1 Score** (0.0 to 1.0) based on matching `(document_id, error_type)` pairs
+- **Weighted F1** where critical errors (fraud) count more than minor ones (weekend expenses)
+- **Partial credit** if you flag the right document but guess the wrong error type (0.25 instead of 0)
+- **Confusion matrix** showing which error types you nailed and which you missed
+- **Risk score** in rupees: how much money your findings would have saved
 
-- **Weighted F1** — critical errors (fraud: 2.0×) count more than minor ones (weekend expense: 0.5×)
-- **Partial credit** — right document + wrong error type gets 0.25 credit instead of 0
-- **Confusion matrix** — which error types the agent found vs missed
-- **Risk scoring** — rupee value of caught vs missed errors (e.g., "₹3.5L risk mitigated")
-- **Dense rewards** — per-step feedback with decay (earlier findings worth more)
+Each step also gives a reward signal (+0.15 per correct finding, -0.05 per false positive) so you can use this for RL training, not just evaluation.
 
----
+## Getting Started
 
-## Quick Start
-
-### Option 1: Local Development
+### Run locally
 
 ```bash
 git clone https://github.com/balloonmann/financial-audit-env.git
 cd financial-audit-env
-python -m venv venv && venv\Scripts\activate  # Windows
 pip install -e .
 python -m financial_audit_env.server.app
 ```
 
-Server starts at `http://localhost:8000`. Check health: `GET /health`.
+Server starts at `http://localhost:8000`. Hit `/health` to check it's running, or `/docs` for the interactive Swagger UI.
 
-### Option 2: Docker
+### Run with Docker
 
 ```bash
-git clone https://github.com/balloonmann/financial-audit-env.git && cd financial-audit-env
 docker build -t financial-audit-env .
 docker run -p 8000:8000 financial-audit-env
 ```
 
-### Option 3: Use the Live API
+### Use the hosted version
 
-The environment is deployed on HuggingFace Spaces:
+The environment is live on HuggingFace Spaces. No setup needed.
 
-```
-https://balloonmann-financial-audit-env.hf.space
-```
-
-Try it:
 ```bash
+# Check it's up
 curl https://balloonmann-financial-audit-env.hf.space/health
+
+# Start an audit
 curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
   -H "Content-Type: application/json" \
   -d '{"task_id": "expense_audit", "seed": 42}'
 ```
 
----
+## API Endpoints
 
-## API Reference
-
-| Endpoint | Method | Description |
+| Endpoint | Method | What it does |
 |----------|--------|-------------|
-| `/health` | GET | Health check — returns status and version |
-| `/tasks` | GET | List all tasks with descriptions and allowed error types |
-| `/reset` | POST | Start a new episode — `{task_id, seed, investigation_mode}` |
-| `/step` | POST | Submit findings — `{action: {findings: [...], submit_final: bool}}` |
-| `/state` | GET | Current episode state (step count, found errors) |
-| `/grader` | GET | Final score with F1, weighted F1, confusion matrix, risk |
-| `/session` | POST | Create an isolated session for multi-tenancy |
+| `/` | GET | Welcome message with links to everything else |
+| `/health` | GET | Returns status, version, task count |
+| `/docs` | GET | Interactive Swagger UI (try the API in your browser) |
+| `/tasks` | GET | Lists all 4 tasks with descriptions and allowed error types |
+| `/reset` | POST | Starts a new episode. Send `task_id` and `seed` |
+| `/step` | POST | Submit findings. Set `submit_final: true` to end the episode |
+| `/state` | GET | Shows current progress (step number, errors found so far) |
+| `/grader` | GET | Full scoring breakdown after episode ends |
+| `/session` | POST | Creates an isolated session (for running multiple agents at once) |
 | `/leaderboard` | GET | Best scores per model |
-| `/metrics` | GET | Usage statistics (resets, steps, uptime) |
-| `/adaptive-difficulty` | GET | Difficulty recommendation based on score history |
+| `/metrics` | GET | Usage stats (total resets, steps, uptime) |
+| `/adaptive-difficulty` | GET | Suggests harder/easier settings based on past scores |
 
-### Action Space (what the agent submits)
+## What the Agent Sends (Action Space)
+
 ```json
 {
   "findings": [
     {
       "document_id": "EXP-010",
       "error_type": "over_limit",
-      "description": "Meal expense of ₹4500 exceeds the ₹1500 daily limit",
+      "description": "Meal expense of 4500 exceeds the 1500 daily limit",
       "suggested_fix": "Reject and request revised claim"
     }
   ],
@@ -154,7 +129,8 @@ curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
 }
 ```
 
-### Observation Space (what the agent receives)
+## What the Agent Gets Back (Observation Space)
+
 ```json
 {
   "task_id": "expense_audit",
@@ -169,99 +145,78 @@ curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
 }
 ```
 
----
-
 ## Investigation Mode
 
-For a more realistic multi-step experience, reset with `investigation_mode: true`:
+There's an optional mode where the agent doesn't get all the documents upfront. Instead:
 
-1. **Step 1:** Agent receives a data summary (counts, categories) — not the full documents
-2. **Step 2:** Agent requests specific document categories to investigate
-3. **Step 3:** Agent receives detailed data for those categories
-4. **Step 4+:** Agent submits findings based on what it's seen
+1. Reset with `"investigation_mode": true`
+2. You get a summary (how many documents, what categories exist) but no actual data
+3. Request specific categories to look at (costs a step)
+4. Then submit findings as usual
 
-This tests whether an agent can **triage and prioritize** — a core real-world audit skill.
+This tests whether an agent can figure out where to look first, which is what real auditors actually do.
 
----
+## Running the Baseline
 
-## Running the Baseline Agent
-
-The baseline uses Meta Llama 3.1 8B via the free HuggingFace Inference API:
+The baseline uses Llama 3.1 8B through the free HuggingFace Inference API:
 
 ```bash
-export HF_TOKEN=your_huggingface_token
+export HF_TOKEN=your_token
 export API_BASE_URL=https://router.huggingface.co/v1/
 export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 
 python inference.py --env-url http://localhost:8000
 ```
 
-### Baseline Scores (Llama 3.1 8B)
+### Baseline Results
 
-| Task | Difficulty | F1 Score | Notes |
-|------|-----------|----------|-------|
-| Expense Audit | Easy | 0.3158 | Finds some violations, misses cumulative breach |
-| Invoice Match | Medium | 0.0000 | Struggles with cross-document matching |
-| GST Reconciliation | Hard | 0.0000 | Cannot reconcile at scale |
-| Fraud Detection | Expert | — | Not yet benchmarked |
+| Task | Difficulty | F1 Score |
+|------|-----------|----------|
+| Expense Audit | Easy | 0.3158 |
+| Invoice Match | Medium | 0.0000 |
+| GST Reconciliation | Hard | 0.0000 |
+| Fraud Detection | Expert | not yet tested |
 
-These scores show there's significant room for improvement — a better agent or model should be able to score much higher.
-
----
+Yes, the scores are low. That's the point. There's a lot of room for a better agent or a bigger model to improve on this.
 
 ## Security
 
-- **Rate limiting** — 30 requests/minute per IP with TTL-based cleanup
-- **Input validation** — Pydantic strict mode, max 50 findings per step
-- **Secure headers** — OWASP recommended (HSTS, X-Frame-Options, nosniff)
-- **Ground truth protection** — error messages never leak planted error details
-- **Request tracking** — every response includes `X-Request-ID` for debugging
-- **Body size limits** — 1MB maximum request size
-- **CORS** — configurable via `CORS_ORIGINS` environment variable
+The API has rate limiting (30 req/min per IP), request size limits (1MB), secure headers (HSTS, X-Frame-Options), and input validation through Pydantic. Error messages are sanitized so they never leak the ground truth answers. Every response has an `X-Request-ID` header for debugging.
 
----
-
-## Project Structure
+## Project Layout
 
 ```
-├── financial_audit_env/
-│   ├── server/
-│   │   ├── app.py              ← FastAPI application + all endpoints
-│   │   ├── environment.py      ← Core RL environment (reset/step/state)
-│   │   ├── data_generator.py   ← Synthetic data with planted errors
-│   │   ├── graders.py          ← F1 scoring, weighted F1, risk scoring
-│   │   ├── security.py         ← Rate limiting, headers, auth
-│   │   └── tasks.py            ← Task definitions (easy → expert)
-│   ├── models.py               ← Pydantic models (Action, Observation, State)
-│   ├── baseline.py             ← Baseline agent using Llama 3.1
-│   └── client.py               ← Python client for the environment
-├── tests/                      ← 78 pytest tests
-├── inference.py                ← Hackathon inference script
-├── openenv.yaml                ← OpenEnv spec configuration
-├── Dockerfile                  ← Container for HF Spaces deployment
-└── pyproject.toml              ← Dependencies and project config
+financial_audit_env/
+  server/
+    app.py              # FastAPI app with all endpoints
+    environment.py      # The actual RL environment (reset, step, state)
+    data_generator.py   # Generates fake financial data with planted errors
+    graders.py          # F1 scoring, weighted F1, risk scoring
+    security.py         # Rate limiting, headers, auth
+    tasks.py            # Task definitions (4 tasks, easy to expert)
+  models.py             # Pydantic models (Action, Observation, State)
+  baseline.py           # Baseline agent using Llama 3.1
+tests/                  # 78 pytest tests
+inference.py            # Hackathon inference script with [START]/[STEP]/[END] logs
+openenv.yaml            # OpenEnv spec config
+Dockerfile              # For HF Spaces deployment
 ```
 
----
+## Design Choices
 
-## Architecture & Design Decisions
+**Why synthetic data?** Static datasets let models memorize answers. Every seed generates unique data, so the agent has to actually understand the task.
 
-| Decision | Rationale |
-|----------|-----------|
-| **Synthetic data (not static datasets)** | Prevents AI memorization — every seed generates unique data |
-| **Deterministic F1 grading (not LLM-as-judge)** | Reproducible, fair, zero cost — no API calls needed for scoring |
-| **Dense rewards (not sparse)** | +0.15 per correct finding enables RL training, not just evaluation |
-| **Red herrings in data** | Forces precision — a naive "flag everything" strategy gets penalized |
-| **Pydantic strict validation** | Safely handles raw LLM outputs — rejects malformed JSON immediately |
-| **Session-based multi-tenancy** | Multiple agents can run concurrently without state conflicts |
-| **REFERENCE_DATE (not datetime.now())** | Same seed = identical data regardless of when you run it |
+**Why F1 scoring instead of LLM-as-judge?** Deterministic, reproducible, free. No API calls needed to grade. Same findings always get the same score.
 
----
+**Why dense rewards?** A single score at the end of an episode isn't useful for training. Per-step rewards (+0.15 per correct, -0.05 per wrong) give the agent something to learn from.
 
-## Future Scope
+**Why red herrings?** Without them, the optimal strategy is "flag everything." Red herrings force precision.
 
-- **Scalability:** Async data generation workers for parallel RL training
-- **International:** Expand beyond Indian GST to support EU VAT, US sales tax
-- **Multi-agent:** Collaborative auditing where agents specialize in different error types
-- **Adversarial mode:** Agent tries to plant errors that fool other agents
-- **Fine-tuning dataset:** Export agent interactions as training data for smaller models
+**Why a fixed reference date?** Using `datetime.now()` means the same seed generates different data on different days. A fixed date (Jan 15, 2026) keeps everything reproducible.
+
+## What's Next
+
+- Async data generation for parallel training
+- Support for international tax systems (EU VAT, US sales tax) beyond Indian GST
+- Multi-agent mode where agents specialize in different error types
+- Export agent interactions as fine-tuning datasets
