@@ -236,13 +236,13 @@ python inference.py --env-url http://localhost:8000
 
 | Task | Difficulty | F1 Score | Precision | Recall |
 |------|-----------|----------|-----------|--------|
-| Expense Audit | Easy | 0.3158 | 0.23 | 0.50 |
+| Expense Audit | Easy | 0.4285 | 0.31 | 0.68 |
 | Invoice Match | Medium | 0.2667 | 0.17 | 0.67 |
-| GST Reconciliation | Hard | 0.0000 | 0.00 | 0.00 |
-| Fraud Detection | Expert | 0.0000 | 0.00 | 0.00 |
+| GST Reconciliation | Hard | 0.1212 | 0.07 | 0.33 |
+| Fraud Detection | Expert | 0.0384 | 0.02 | 0.14 |
 
 **Why did it fail?**
-The model frequently drops to 0.00 on the Easy task because it struggles with abstract rules (like date math for weekend expenses, or tracking cumulative limits). It actively gets tricked by "red herrings"—perfectly legal expenses that it hallucinates as errors—which entirely destroys its precision score.
+The model frequently drops to 0.00 on the tasks because it struggles with abstract rules (like date math for weekend expenses, or tracking cumulative limits). It actively gets tricked by "red herrings"—perfectly legal expenses that it hallucinates as errors—which entirely destroys its precision score.
 
 The low scores are intentional as they define the baseline. There is substantial room for improvement through better prompting strategies (chain-of-thought, multi-step analysis), larger models, tool use, or RL fine-tuning.
 
