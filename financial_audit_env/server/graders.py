@@ -1,17 +1,23 @@
 # Copyright (c) 2026. All rights reserved.
 # Financial Audit Environment — Deterministic graders.
 #
-# Each grader computes an F1 score (0.0–1.0) by comparing the agent's
-# submitted findings against the ground truth errors.
+# Each grader computes scores by comparing the agent's submitted findings
+# against the ground truth errors.
+#
+# Scoring methods:
+#   1. F1 score (0.0–1.0) — primary metric, unchanged for compatibility
+#   2. Weighted F1 — errors weighted by severity (critical errors worth more)
+#   3. Partial credit — right document but wrong error_type gets 0.25 credit
+#   4. Risk score — monetary value of caught vs missed errors
+#   5. Confusion matrix — which error_types the agent is best/worst at
 #
 # A finding "matches" a ground truth error if BOTH:
 #   1. document_id matches (case-insensitive, stripped)
 #   2. error_type matches (case-insensitive, stripped)
-#
-# The description and suggested_fix fields are informational only —
-# they don't affect the score. This keeps grading fully deterministic.
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 
 
 def compute_f1_score(
@@ -20,36 +26,37 @@ def compute_f1_score(
 ) -> Dict[str, Any]:
     """
     Compute F1 score from agent findings vs ground truth.
-
-    Args:
-        findings: List of dicts with at least 'document_id' and 'error_type'
-        ground_truth: List of dicts with 'document_id' and 'error_type'
+    Includes weighted F1, partial credit, confusion matrix, and risk scoring.
 
     Returns:
         Dict with keys:
-        - score: float in [0.0, 1.0] (the F1 score)
-        - precision: float in [0.0, 1.0]
-        - recall: float in [0.0, 1.0]
-        - true_positives: int
-        - false_positives: int
-        - false_negatives: int
-        - total_findings: int (what agent submitted)
-        - total_errors: int (ground truth count)
-        - matched_errors: list of matched (document_id, error_type) pairs
-        - missed_errors: list of ground truth errors not found
-        - false_positive_list: list of findings that didn't match
+        - score: float [0.0, 1.0] (unweighted F1 — primary metric)
+        - weighted_score: float [0.0, 1.0] (severity-weighted F1)
+        - partial_credit_score: float [0.0, 1.0] (with partial credit)
+        - precision/recall: standard metrics
+        - true_positives/false_positives/false_negatives: counts
+        - total_findings/total_errors: counts
+        - matched_errors/missed_errors/false_positive_list: details
+        - confusion_matrix: per-error_type breakdown
+        - risk_score: monetary risk assessment
     """
     # Normalize ground truth into a set of (doc_id, error_type) tuples
     gt_set = set()
+    gt_by_doc: Dict[str, set] = {}  # doc_id → set of error_types
+    gt_list = []
     for gt in ground_truth:
-        key = (
-            gt["document_id"].strip().upper(),
-            gt["error_type"].strip().lower(),
-        )
+        doc_id = gt["document_id"].strip().upper()
+        error_type = gt["error_type"].strip().lower()
+        key = (doc_id, error_type)
         gt_set.add(key)
+        gt_list.append(key)
+        if doc_id not in gt_by_doc:
+            gt_by_doc[doc_id] = set()
+        gt_by_doc[doc_id].add(error_type)
 
     # Normalize findings and check matches
     matched = set()
+    partial_matches = []  # Right doc, wrong error_type
     false_positive_list = []
 
     for finding in findings:
@@ -59,38 +66,127 @@ def compute_f1_score(
 
         if key in gt_set and key not in matched:
             matched.add(key)
+        elif doc_id in gt_by_doc and error_type not in gt_by_doc[doc_id]:
+            # Right document, wrong error type → partial credit
+            partial_matches.append({
+                "document_id": finding.get("document_id", ""),
+                "error_type": finding.get("error_type", ""),
+                "expected_types": list(gt_by_doc[doc_id]),
+            })
         else:
             false_positive_list.append({
                 "document_id": finding.get("document_id", ""),
                 "error_type": finding.get("error_type", ""),
             })
 
-    # Compute metrics
+    # --- Standard F1 ---
     true_positives = len(matched)
-    false_positives = len(false_positive_list)
+    false_positives = len(false_positive_list) + len(partial_matches)
     false_negatives = len(gt_set) - true_positives
     total_findings = len(findings)
     total_errors = len(gt_set)
 
-    # Precision: of what we flagged, how many were correct?
     if true_positives + false_positives > 0:
         precision = true_positives / (true_positives + false_positives)
     else:
         precision = 0.0
 
-    # Recall: of all errors, how many did we find?
     if total_errors > 0:
         recall = true_positives / total_errors
     else:
-        recall = 1.0  # No errors to find = perfect recall
+        recall = 1.0
 
-    # F1: harmonic mean of precision and recall
     if precision + recall > 0:
         f1 = 2 * (precision * recall) / (precision + recall)
     else:
         f1 = 0.0
 
-    # Compute missed errors for detailed feedback
+    # --- Weighted F1 (severity-weighted) ---
+    weighted_tp = sum(
+        ERROR_SEVERITY_WEIGHTS.get(et, 1.0) for (_, et) in matched
+    )
+    weighted_total = sum(
+        ERROR_SEVERITY_WEIGHTS.get(gt[1], 1.0) for gt in gt_set
+    )
+    weighted_fp = sum(
+        ERROR_SEVERITY_WEIGHTS.get(
+            fp.get("error_type", "").strip().lower(), 1.0
+        )
+        for fp in false_positive_list
+    )
+
+    if weighted_tp + weighted_fp > 0:
+        w_precision = weighted_tp / (weighted_tp + weighted_fp)
+    else:
+        w_precision = 0.0
+
+    if weighted_total > 0:
+        w_recall = weighted_tp / weighted_total
+    else:
+        w_recall = 1.0
+
+    if w_precision + w_recall > 0:
+        weighted_f1 = 2 * (w_precision * w_recall) / (w_precision + w_recall)
+    else:
+        weighted_f1 = 0.0
+
+    # --- Partial Credit Score ---
+    partial_credit_value = len(partial_matches) * 0.25
+    effective_tp = true_positives + partial_credit_value
+    effective_fp = len(false_positive_list) + len(partial_matches) * 0.75
+
+    if effective_tp + effective_fp > 0:
+        pc_precision = effective_tp / (effective_tp + effective_fp)
+    else:
+        pc_precision = 0.0
+
+    if total_errors > 0:
+        pc_recall = min(effective_tp / total_errors, 1.0)
+    else:
+        pc_recall = 1.0
+
+    if pc_precision + pc_recall > 0:
+        partial_credit_f1 = 2 * (pc_precision * pc_recall) / (pc_precision + pc_recall)
+    else:
+        partial_credit_f1 = 0.0
+
+    # --- Confusion Matrix ---
+    # Track per-error_type: found, missed, false_flagged
+    all_error_types = set()
+    for _, et in gt_set:
+        all_error_types.add(et)
+    for f in findings:
+        all_error_types.add(f.get("error_type", "").strip().lower())
+
+    confusion_matrix: Dict[str, Dict[str, int]] = {}
+    for et in sorted(all_error_types):
+        gt_count = sum(1 for _, etype in gt_set if etype == et)
+        found_count = sum(1 for _, etype in matched if etype == et)
+        false_flagged = sum(
+            1 for fp in false_positive_list
+            if fp.get("error_type", "").strip().lower() == et
+        )
+        confusion_matrix[et] = {
+            "ground_truth": gt_count,
+            "correctly_found": found_count,
+            "missed": gt_count - found_count,
+            "false_positives": false_flagged,
+            "severity_weight": ERROR_SEVERITY_WEIGHTS.get(et, 1.0),
+        }
+
+    # --- Risk Score (monetary) ---
+    caught_value = sum(
+        ERROR_MONETARY_VALUES.get(et, 0) for (_, et) in matched
+    )
+    missed_value = sum(
+        ERROR_MONETARY_VALUES.get(et, 0)
+        for (_, et) in gt_set
+        if (_, et) not in matched
+    )
+    total_risk_value = caught_value + missed_value
+    risk_mitigation_pct = (caught_value / total_risk_value * 100) if total_risk_value > 0 else 0.0
+
+    # --- Missed errors list ---
     missed_errors = []
     for gt in ground_truth:
         key = (
@@ -104,19 +200,36 @@ def compute_f1_score(
             })
 
     return {
+        # Primary score (backwards compatible)
         "score": round(f1, 4),
         "precision": round(precision, 4),
         "recall": round(recall, 4),
+        # Enhanced scores
+        "weighted_score": round(weighted_f1, 4),
+        "partial_credit_score": round(partial_credit_f1, 4),
+        # Counts
         "true_positives": true_positives,
-        "false_positives": false_positives,
+        "false_positives": len(false_positive_list),
         "false_negatives": false_negatives,
+        "partial_matches": len(partial_matches),
         "total_findings": total_findings,
         "total_errors": total_errors,
+        # Details
         "matched_errors": [
             {"document_id": d, "error_type": e} for d, e in matched
         ],
         "missed_errors": missed_errors,
         "false_positive_list": false_positive_list,
+        "partial_match_list": partial_matches,
+        # Confusion matrix
+        "confusion_matrix": confusion_matrix,
+        # Risk scoring
+        "risk_score": {
+            "caught_value": caught_value,
+            "missed_value": missed_value,
+            "total_risk_value": total_risk_value,
+            "risk_mitigation_pct": round(risk_mitigation_pct, 1),
+        },
     }
 
 
@@ -126,39 +239,38 @@ def compute_step_reward(
     ground_truth: List[Dict[str, str]],
     step_number: int,
     is_final: bool,
+    max_steps: int = 10,
 ) -> float:
     """
-    Compute reward for a single step. Provides dense signal
-    rather than sparse end-of-episode-only reward.
+    Compute reward for a single step with decay for later steps.
 
     Reward components:
         +0.15  per NEW true positive in this step
+        +0.04  per partial match (right doc, wrong error_type)
         -0.05  per false positive in this step
         -0.02  step penalty (discourages unnecessary steps)
+        -0.005 × step_number  decay (earlier findings worth more)
         +0.30  bonus if final submission and recall ≥ 0.8
         +0.10  bonus if final submission and precision ≥ 0.9
         -0.20  penalty if final submission and recall < 0.3
-
-    Args:
-        new_findings: Findings submitted in THIS step only
-        all_findings_so_far: ALL findings accumulated across all steps
-        ground_truth: Ground truth errors
-        step_number: Current step number
-        is_final: Whether this is the final submission
-
-    Returns:
-        Float reward value
     """
     reward = 0.0
 
-    # Step penalty — small cost per step to discourage stalling
+    # Step penalty + decay
     reward -= 0.02
+    reward -= 0.005 * step_number  # Later steps worth slightly less
 
-    # Evaluate just the new findings in this step
+    # Build ground truth set
     gt_set = set()
+    gt_by_doc: Dict[str, set] = {}
     for gt in ground_truth:
-        key = (gt["document_id"].strip().upper(), gt["error_type"].strip().lower())
+        doc_id = gt["document_id"].strip().upper()
+        error_type = gt["error_type"].strip().lower()
+        key = (doc_id, error_type)
         gt_set.add(key)
+        if doc_id not in gt_by_doc:
+            gt_by_doc[doc_id] = set()
+        gt_by_doc[doc_id].add(error_type)
 
     # What was already matched before this step?
     prev_matched = set()
@@ -170,13 +282,18 @@ def compute_step_reward(
 
     # Score new findings
     for finding in new_findings:
-        key = (
-            finding.get("document_id", "").strip().upper(),
-            finding.get("error_type", "").strip().lower(),
-        )
+        doc_id = finding.get("document_id", "").strip().upper()
+        error_type = finding.get("error_type", "").strip().lower()
+        key = (doc_id, error_type)
+
         if key in gt_set and key not in prev_matched:
-            reward += 0.15  # New true positive
+            # Severity-weighted reward
+            weight = ERROR_SEVERITY_WEIGHTS.get(error_type, 1.0)
+            reward += 0.15 * weight  # New true positive
             prev_matched.add(key)
+        elif doc_id in gt_by_doc and error_type not in gt_by_doc[doc_id]:
+            # Partial match — right document, wrong error type
+            reward += 0.04
         else:
             reward -= 0.05  # False positive or duplicate
 

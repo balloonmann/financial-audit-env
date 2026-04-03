@@ -4,6 +4,7 @@
 # These models define the typed contracts between the agent and the environment:
 #   - Finding: A single audit issue identified by the agent
 #   - AuditAction: What the agent submits each step
+#   - InvestigateAction: Request to drill into specific document categories
 #   - AuditObservation: What the agent sees after each step
 #   - AuditState: Internal episode metadata
 #
@@ -20,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 try:
     from openenv.core.env_server.types import Action, Observation, State
 except ImportError:
-    # Standalone fallback — allows running without openenv-core installed
     class Action(BaseModel):
         """Base action model (standalone fallback)."""
         pass
@@ -51,14 +51,10 @@ def _sanitize_string(value: str, max_length: int = MAX_STRING_LENGTH) -> str:
     - Strip leading/trailing whitespace
     - Truncate to max_length
     - Remove null bytes and control characters (except newlines/tabs)
-
-    This prevents injection attacks and excessive memory usage.
     """
     if not isinstance(value, str):
         return value
-    # Remove null bytes
     value = value.replace("\x00", "")
-    # Remove control chars except \n \r \t
     value = "".join(
         ch for ch in value
         if ch in ("\n", "\r", "\t") or (ord(ch) >= 32)
@@ -75,14 +71,11 @@ class Finding(BaseModel):
 
     Attributes:
         document_id: The identifier of the document/row with the issue.
-                     e.g., "EXP-007", "INV-003", "BOOK-015"
         field:       Optional — which specific field has the error.
-                     e.g., "amount", "gst_rate", "vendor_gstin"
-        error_type:  The category of error found. Must match one of the
-                     allowed error_types defined in the task.
-                     e.g., "over_limit", "price_mismatch", "missing_in_gstr2b"
+        error_type:  The category of error found. Must match allowed types.
         description: Human-readable explanation of the finding.
         suggested_fix: Optional recommended corrective action.
+        severity:    Optional severity level (auto-populated by grader).
     """
     model_config = ConfigDict(strict=True)
 
@@ -114,11 +107,15 @@ class Finding(BaseModel):
         max_length=MAX_STRING_LENGTH,
         description="Recommended corrective action",
     )
+    severity: Optional[float] = Field(
+        default=None,
+        description="Severity weight (auto-populated by grader, 0.0-2.0)",
+    )
 
     @field_validator("document_id", "error_type", mode="before")
     @classmethod
     def sanitize_ids(cls, v: str) -> str:
-        """Sanitize identifier fields — strip whitespace, remove dangerous chars."""
+        """Sanitize identifier fields."""
         return _sanitize_string(v, MAX_DOCUMENT_ID_LENGTH)
 
     @field_validator("description", "suggested_fix", mode="before")
@@ -139,13 +136,6 @@ class AuditAction(Action):
 
     The agent can submit findings incrementally across multiple steps,
     or all at once with submit_final=True.
-
-    Attributes:
-        findings:     List of Finding objects for this step.
-                      Maximum 50 findings per step to prevent abuse.
-        submit_final: If True, the episode ends and the final grader
-                      score is computed. If False, findings are accumulated
-                      and the agent gets feedback before continuing.
     """
     findings: List[Finding] = Field(
         default_factory=list,
@@ -170,26 +160,32 @@ class AuditAction(Action):
 
 
 # ---------------------------------------------------------------------------
+# InvestigateAction — request to drill into specific data (investigation mode)
+# ---------------------------------------------------------------------------
+class InvestigateAction(Action):
+    """
+    Action for investigation mode: request to view specific document categories.
+
+    Instead of submitting findings, the agent requests more detailed views
+    of specific document types. Only available when investigation_mode=True.
+    """
+    request_categories: List[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Document categories to investigate (e.g., 'expenses', 'invoices')",
+    )
+    request_summary: bool = Field(
+        default=False,
+        description="Request a statistical summary of the data",
+    )
+
+
+# ---------------------------------------------------------------------------
 # AuditObservation — what the agent sees after each step
 # ---------------------------------------------------------------------------
 class AuditObservation(Observation):
     """
     Observation returned to the agent after reset() or step().
-
-    Contains the financial documents to audit, the task description,
-    accumulated findings with feedback, and episode progress info.
-
-    Attributes:
-        task_id:          Which task is active (expense_audit, invoice_match, etc.)
-        task_description: Natural language description of what to look for
-        documents:        The financial data to audit — structure depends on task:
-                          - expense_audit: {"expenses": [...], "policy": {...}}
-                          - invoice_match: {"purchase_orders": [...], "grns": [...], "invoices": [...]}
-                          - gst_reconciliation: {"books": [...], "gstr2b": [...]}
-        findings_so_far:  Previously submitted findings (across all steps)
-        feedback:         Environment's response to the last action
-        step_number:      Current step (1-indexed)
-        max_steps:        Maximum steps allowed for this task
     """
     task_id: str = ""
     task_description: str = ""
@@ -198,6 +194,19 @@ class AuditObservation(Observation):
     feedback: str = ""
     step_number: int = 0
     max_steps: int = 0
+    # Investigation mode fields (optional, backwards compatible)
+    investigation_mode: bool = Field(
+        default=False,
+        description="Whether investigation mode is active",
+    )
+    available_categories: List[str] = Field(
+        default_factory=list,
+        description="Document categories available for investigation",
+    )
+    data_summary: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Statistical summary of data (investigation mode)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -206,14 +215,12 @@ class AuditObservation(Observation):
 class AuditState(State):
     """
     Internal state of the environment for the current episode.
-
-    Extends the OpenEnv State base class (which provides episode_id
-    and step_count) with audit-specific tracking fields.
-
-    Note: total_errors is NOT exposed to the agent — it's used
-    internally for grading only.
     """
     task_id: str = ""
     total_errors: int = 0
     found_errors: int = 0
     false_positives: int = 0
+    # Enhanced tracking
+    investigation_mode: bool = False
+    revealed_categories: List[str] = Field(default_factory=list)
+    cumulative_score: float = 0.0
