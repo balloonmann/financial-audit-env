@@ -151,6 +151,37 @@ class LeaderboardEntry(BaseModel):
 # Standard endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/")
+async def root():
+    """Root endpoint — welcome page with API docs link."""
+    return {
+        "name": "Financial Audit Environment",
+        "version": "2.0.0",
+        "description": (
+            "An OpenEnv-compatible RL environment for financial auditing tasks. "
+            "Agents audit synthetic financial documents to find planted errors."
+        ),
+        "tasks": ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"],
+        "endpoints": {
+            "docs": "/docs",
+            "health": "/health",
+            "tasks": "/tasks",
+            "reset": "POST /reset",
+            "step": "POST /step",
+            "grader": "/grader",
+            "leaderboard": "/leaderboard",
+            "metrics": "/metrics",
+        },
+        "quickstart": (
+            "1. POST /reset with {\"task_id\": \"expense_audit\", \"seed\": 42}\n"
+            "2. Read the documents in the observation\n"
+            "3. POST /step with your findings\n"
+            "4. GET /grader to see your score"
+        ),
+        "github": "https://github.com/balloonmann/financial-audit-env",
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint — required for HF Space deployment."""
