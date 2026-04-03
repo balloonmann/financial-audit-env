@@ -62,7 +62,7 @@ The environment ships with **4 auditing tasks** across a clear difficulty progre
 
 ---
 
-## How It Works
+Per-step reward: **+0.15** per true positive, **-0.05** per false positive.
 
 The environment runs as a REST API following the OpenEnv specification. An episode looks like this:
 
@@ -124,9 +124,9 @@ pip install -e .
 python -m financial_audit_env.server.app
 ```
 
-Server starts at `http://localhost:8000`. Hit `/health` to check it's running, or `/docs` for the interactive Swagger UI.
+Full interactive docs at `/docs`.
 
-### Run with Docker
+---
 
 ```bash
 docker build -t financial-audit-env .
@@ -229,7 +229,6 @@ The baseline agent uses **Llama 3.1 8B** through the free HuggingFace Inference 
 export HF_TOKEN=your_token
 export API_BASE_URL=https://router.huggingface.co/v1/
 export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
-
 python inference.py --env-url http://localhost:8000
 ```
 
@@ -246,7 +245,7 @@ The low scores are intentional — they define the baseline. There is substantia
 
 ---
 
-## Security
+## Setup
 
 - **Rate limiting**: 30 requests/min per IP
 - **Request size limits**: 1 MB maximum
