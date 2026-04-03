@@ -10,102 +10,65 @@ pinned: false
 
 # Financial Audit Environment
 
-An OpenEnv-compatible environment for training AI agents on financial document auditing. Built for the Meta PyTorch Hackathon.
+An OpenEnv-compatible RL environment for financial auditing tasks. Agents operate over synthetic Indian financial documents — expense claims, invoices, GST returns, vendor transactions — and are scored on their ability to identify planted errors via deterministic F1 grading.
 
-**[Try the API](https://balloonmann-financial-audit-env.hf.space/docs)** | **78 tests passing**
+**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** | **78 tests passing**
 
-## Problem
+---
 
-Financial auditing is repetitive and expensive. Auditors check thousands of invoices, expense claims, and tax returns by hand. Most of the work is pattern matching: does this invoice match the purchase order? Did this employee exceed their expense limit? Is this vendor's GST number valid?
+## Environment Overview
 
-This environment generates realistic Indian financial documents, plants errors in them, and scores an agent on how many it finds.
+Tasks with increasing complexity. Each task generates unique documents per seed, plants a fixed number of verifiable errors, and includes red herrings to penalize indiscriminate flagging.
 
-## What's Inside
+| Task | Difficulty | Documents | Planted Errors |
+|------|-----------|-----------|---------------|
+| `expense_audit` | Easy | 19 expense claims + policy definition | 7 violations |
+| `invoice_match` | Medium | 10 POs + 10 GRNs + 12 invoices | 9 discrepancies |
+| `gst_reconciliation` | Hard | 45 book entries + 44 GSTR-2B entries | 12 mismatches |
 
-Four tasks, each harder than the last:
+Red herrings are deliberate. An expense at exactly the daily limit is valid. A ₹1 rounding difference on an invoice is within tolerance. The grader only awards credit for correctly identified violations, not suspicious-looking entries that happen to be clean.
 
-| Task | Difficulty | What you get | What you find |
-|------|-----------|-------------|--------------|
-| **Expense Policy Audit** | Easy | 19 expense claims + company policy | 7 policy violations (over-limit meals, duplicate receipts, weekend expenses) |
-| **Invoice Three-Way Match** | Medium | 10 purchase orders + 10 goods receipts + 12 invoices | 9 discrepancies (price mismatches, duplicate invoices, wrong tax rates) |
-| **GST Reconciliation** | Hard | 45 book entries + 44 GSTR-2B entries | 12 mismatches (missing entries, invalid GSTINs, excess claims) |
-| **Fraud Detection** | Expert | 84 transactions + 26 vendors | 10 fraud patterns (circular invoicing, shell companies, Benford violations) |
+---
 
-Each task includes red herrings: entries that look suspicious but are valid. An expense at exactly the daily limit is legal. A ₹1 rounding difference on an invoice is normal. The agent has to tell the difference.
+## Reward Structure
 
-## How It Works
+Per-step reward: **+0.15** per true positive, **-0.05** per false positive.
 
-The environment runs as a REST API.
+Terminal grading via F1 score on matched `(document_id, error_type)` pairs:
 
-1. **Reset** — specify the task. The environment generates fresh data with hidden errors.
-2. **Read** — examine the documents in the response.
-3. **Submit** — send findings (which document, what error type, why).
-4. **Score** — findings are checked against ground truth and returned as an F1 score.
+- **Standard F1** — equal weight across all error types
+- **Weighted F1** — fraud and GST violations weighted higher than minor policy infractions
+- **Partial credit** — correct document, wrong error type scores 0.25
+- **Risk score** — rupee value of financial exposure covered by correct findings
+- **Confusion matrix** — per-error-type breakdown of TP, FP, FN
+
+Scores are fully deterministic. Same seed, same findings, same score every time.
+
+---
+
+## API
 
 ```
-POST /reset  {"task_id": "expense_audit", "seed": 42}
-             -> Returns documents + task description
-POST /step   {"action": {"findings": [...], "submit_final": true}}
-             -> Returns reward + feedback
-GET /grader  -> Returns F1 score, confusion matrix, risk assessment
+POST /reset     {"task_id": "expense_audit", "seed": 42}
+POST /step      {"action": {"findings": [...], "submit_final": true}}
+GET  /state     current step, errors found, false positives
+GET  /grader    full scoring breakdown after episode completion
+GET  /tasks     all tasks with allowed error types and schemas
+GET  /health    status, version, task count
 ```
 
-Grading breakdown:
+Additional endpoints:
 
-- **F1 Score** (0.0 to 1.0) based on matching `(document_id, error_type)` pairs
-- **Weighted F1** where critical errors (fraud) count more than minor ones (weekend expenses)
-- **Partial credit** for flagging the right document with the wrong error type (0.25 instead of 0)
-- **Confusion matrix** showing per-error-type performance
-- **Risk score** in rupees representing financial exposure caught
-
-Per-step reward signal: +0.15 per correct finding, -0.05 per false positive.
-
-## Getting Started
-
-### Run locally
-
-```bash
-git clone https://github.com/balloonmann/financial-audit-env.git
-cd financial-audit-env
-pip install -e .
-python -m financial_audit_env.server.app
+```
+POST /session            isolated session for parallel agent runs
+GET  /leaderboard        best scores per model
+GET  /metrics            uptime, total resets, total steps
+GET  /adaptive-difficulty   difficulty recommendation based on score history
 ```
 
-Server starts at `http://localhost:8000`. `/health` confirms it's running. `/docs` opens the Swagger UI.
+Full interactive docs at `/docs`.
 
-### Run with Docker
-
-```bash
-docker build -t financial-audit-env .
-docker run -p 8000:8000 financial-audit-env
-```
-
-### Use the hosted version
-
-```bash
-curl https://balloonmann-financial-audit-env.hf.space/health
-
-curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "expense_audit", "seed": 42}'
-```
-
-## API Endpoints
-
-| Endpoint | Method | What it does |
-|----------|--------|-------------|
-| `/` | GET | Welcome message with links |
-| `/health` | GET | Returns status, version, task count |
-| `/docs` | GET | Interactive Swagger UI |
-| `/tasks` | GET | Lists all 4 tasks with descriptions and allowed error types |
-| `/reset` | POST | Starts a new episode. Accepts `task_id` and `seed` |
-| `/step` | POST | Submit findings. `submit_final: true` ends the episode |
-| `/state` | GET | Current progress (step number, errors found so far) |
-| `/grader` | GET | Full scoring breakdown after episode ends |
-| `/session` | POST | Creates an isolated session for parallel agents |
-| `/leaderboard` | GET | Best scores per model |
-| `/metrics` | GET | Usage stats (total resets, steps, uptime) |
-| `/adaptive-difficulty` | GET | Suggests difficulty adjustments based on past scores |
+---
 
 ## Action Space
 
@@ -123,6 +86,10 @@ curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
 }
 ```
 
+`submit_final: false` accumulates findings across steps (max 5). `submit_final: true` triggers terminal grading.
+
+---
+
 ## Observation Space
 
 ```json
@@ -139,16 +106,17 @@ curl -X POST https://balloonmann-financial-audit-env.hf.space/reset \
 }
 ```
 
+---
+
 ## Investigation Mode
 
-An optional mode where the agent receives a document summary on reset rather than the full data.
+Reset with `"investigation_mode": true` to withhold raw document data on episode start. The agent receives document counts and category summaries, then requests specific categories (at step cost) before submitting findings. Tests prioritisation behaviour rather than exhaustive search.
 
-1. Reset with `"investigation_mode": true`
-2. Receive a summary (document counts, categories) without the underlying data
-3. Request specific categories (costs a step)
-4. Submit findings as usual
+---
 
-## Running the Baseline
+## Baseline
+
+Llama 3.1 8B Instruct via HuggingFace Inference API. Uses OpenAI-compatible client as required by contest spec.
 
 ```bash
 export HF_TOKEN=your_token
@@ -157,53 +125,74 @@ export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 python inference.py --env-url http://localhost:8000
 ```
 
-### Baseline Results (Llama 3.1 8B)
-
 | Task | Difficulty | F1 Score |
 |------|-----------|----------|
-| Expense Audit | Easy | 0.3158 |
-| Invoice Match | Medium | 0.0000 |
-| GST Reconciliation | Hard | 0.0000 |
-| Fraud Detection | Expert | not yet tested |
+| `expense_audit` | Easy | 0.3158 |
+| `invoice_match` | Medium | 0.0000 |
+| `gst_reconciliation` | Hard | 0.0000 |
 
-## Security
+---
 
-Rate limiting at 30 req/min per IP, 1MB request size limit, HSTS and X-Frame-Options headers, Pydantic input validation. Error messages are sanitized and never expose ground truth. Every response includes an `X-Request-ID` header.
+## Setup
 
-## Project Layout
+**Local:**
+```bash
+git clone https://github.com/balloonmann/financial-audit-env.git
+cd financial-audit-env
+pip install -e .
+python -m financial_audit_env.server.app
+```
+
+**Docker:**
+```bash
+docker build -t financial-audit-env .
+docker run -p 8000:8000 financial-audit-env
+```
+
+**Hosted:** `https://balloonmann-financial-audit-env.hf.space`
+
+---
+
+## Architecture
 
 ```
 financial_audit_env/
   server/
-    app.py              # FastAPI app
-    environment.py      # RL environment (reset, step, state)
-    data_generator.py   # Synthetic data generation with planted errors
-    graders.py          # F1 scoring, weighted F1, risk scoring
-    security.py         # Rate limiting, headers, auth
-    tasks.py            # Task definitions
-  models.py             # Pydantic models
-  baseline.py           # Baseline agent
+    app.py              # FastAPI — all endpoints
+    environment.py      # reset(), step(), state() — core RL loop
+    data_generator.py   # seed-based synthetic document generation
+    graders.py          # F1, weighted F1, risk scoring
+    security.py         # rate limiting, OWASP headers, input validation
+    tasks.py            # task registry (4 tasks)
+  models.py             # Pydantic — AuditAction, AuditObservation, EpisodeState
+  baseline.py           # Llama 3.1 8B baseline agent
 tests/                  # 78 pytest tests
-inference.py            # Hackathon inference script
+inference.py            # contest inference script
 openenv.yaml            # OpenEnv spec config
 Dockerfile
 ```
 
-## Design Choices
+---
 
-**Synthetic data** — static datasets allow memorization. Each seed generates unique data.
+## Design Decisions
 
-**F1 scoring** — deterministic, reproducible, requires no API calls to grade.
+**Seed-based generation** prevents memorisation. Every unique seed produces a structurally valid but distinct document set with freshly planted errors at randomised positions and values.
 
-**Dense rewards** — per-step signals (+0.15 correct, -0.05 wrong) support RL training.
+**Deterministic grading** removes LLM-as-judge variability. Ground truth is computed at generation time and stored server-side. The grader matches submitted `(document_id, error_type)` pairs against it mathematically.
 
-**Red herrings** — without them, flagging everything is optimal. Red herrings enforce precision.
+**Dense per-step rewards** make the environment usable for RL training, not just evaluation. Terminal-only rewards provide insufficient signal for policy gradient methods on tasks with sparse correct answers.
 
-**Fixed reference date** — `datetime.now()` breaks seed reproducibility across days. A fixed date (Jan 15, 2026) keeps generation stable.
+**Red herrings enforce precision.** Without plausible-but-valid entries, recall-maximising strategies (flag everything) score perfectly. Red herrings make precision a load-bearing part of the F1 score.
 
-## What's Next
+**Fixed reference date (Jan 15, 2026)** keeps generation reproducible across calendar days. `datetime.now()` breaks seed determinism.
 
-- Async data generation for parallel training
-- International tax system support (EU VAT, US sales tax)
-- Multi-agent mode with specialization by error type
-- Export of agent interactions as fine-tuning datasets
+**Rate limiting at 30 req/min per IP**, 1MB request cap, sanitised error messages (ground truth never exposed), `X-Request-ID` on every response.
+
+---
+
+## Roadmap
+
+- Async data generation for high-throughput parallel RL training
+- International tax structures (EU VAT, US sales tax) beyond Indian GST
+- Multi-agent collaborative auditing with specialisation by error type
+- Agent interaction export as supervised fine-tuning datasets
