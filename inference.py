@@ -39,7 +39,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation"]
+TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
 SEED = 42
 BENCHMARK = "financial_audit_env"
 TEMPERATURE = 0.1
