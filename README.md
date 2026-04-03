@@ -246,6 +246,8 @@ The model frequently drops to 0.00 on the tasks because it struggles with abstra
 
 The low scores are intentional as they define the baseline. There is substantial room for improvement through better prompting strategies (chain-of-thought, multi-step analysis), larger models, tool use, or RL fine-tuning.
 
+Newer models will perform better for sure.
+
 ---
 
 ## Setup
