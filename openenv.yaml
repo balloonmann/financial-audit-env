@@ -1,6 +1,12 @@
 spec_version: 1
 name: financial_audit_env
+description: RL environment for evaluating AI agents on financial auditing tasks
 type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
+tags:
+  - openenv
+  - finance
+  - reinforcement-learning
+author: balloonmann
