@@ -37,7 +37,10 @@ logger = logging.getLogger("inference")
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+if HF_TOKEN is None:
+    raise ValueError("HF_TOKEN environment variable is required")
 
 TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
 SEED = 42
@@ -67,9 +70,10 @@ def log_step(
     error: Optional[str] = None,
 ) -> None:
     """Emit the [STEP] structured log line."""
-    error_str = error if error else "none"
+    error_str = error if error else "null"
+    done_str = "true" if done else "false"
     print(
-        f"[STEP] step={step} action={action} reward={reward:.4f} done={done} error={error_str}",
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_str} error={error_str}",
         flush=True,
     )
 
@@ -81,8 +85,10 @@ def log_end(
     rewards: List[float],
 ) -> None:
     """Emit the [END] structured log line."""
+    success_str = "true" if success else "false"
+    rewards_str = ",".join([f"{r:.2f}" for r in rewards])
     print(
-        f"[END] success={success} steps={steps} score={score:.4f} rewards={json.dumps(rewards)}",
+        f"[END] success={success_str} steps={steps} rewards={rewards_str}",
         flush=True,
     )
 
@@ -289,10 +295,6 @@ def main():
     parser.add_argument("--seed", type=int, default=SEED, help="Seed for reproducibility")
     args = parser.parse_args()
 
-    if not API_KEY:
-        print("ERROR: HF_TOKEN or API_KEY environment variable not set.")
-        sys.exit(1)
-
     print(f"{'='*60}")
     print(f" OpenEnv Financial Audit - Inference Configuration")
     print(f" Model Identifier: {MODEL_NAME}")
@@ -300,7 +302,7 @@ def main():
     print(f" Environment URL:  {args.env_url}")
     print(f"{'='*60}\n")
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     tasks_to_run = [args.task] if args.task else TASK_IDS
     results = {}
