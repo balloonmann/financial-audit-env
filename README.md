@@ -6,13 +6,14 @@ colorTo: green
 sdk: docker
 app_port: 8000
 pinned: false
+tags: [openenv]
 ---
 
 # Financial Audit Environment
 
-An OpenEnv-compatible reinforcement learning environment that evaluates how well AI agents can audit financial documents. Built for the [Meta PyTorch Hackathon](https://www.scaler.com/school-of-technology/meta-pytorch-hackathon).
+An OpenEnv-compatible reinforcement learning environment that evaluates how well AI agents can audit financial documents. Built for the [Meta PyTorch Hackathon](https://pytorch.devpost.com/).
 
-**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)**  · **78 tests passing**
+**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **[GitHub](https://github.com/balloonmann/financial-audit-env)** · **78 tests passing**
 
 ---
 
