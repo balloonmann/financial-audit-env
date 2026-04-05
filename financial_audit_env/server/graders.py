@@ -232,7 +232,92 @@ def compute_f1_score(
         },
     }
 
-
+# ---------------------------------------------------------------------------
+# GRADING & REWARD DESIGN RATIONALE
+# ---------------------------------------------------------------------------
+#
+# WHY F1 AS THE PRIMARY METRIC
+#
+# Precision and recall pull in opposite directions for an auditor. Flag
+# everything and recall hits 1.0 while precision craters. Flag nothing and
+# precision is perfect (vacuously) while recall is zero. F1 forces a balance.
+# It's also standard in information retrieval, which auditing resembles: the
+# agent is retrieving a specific set of errors from a document collection.
+#
+# WHY SEVERITY WEIGHTING
+#
+# Not all errors cost the same. A ₹200 rounding difference and a fabricated
+# vendor invoice both show up as one row in the ground truth, but missing the
+# fraud pattern is orders of magnitude more damaging than missing the rounding
+# error. ERROR_SEVERITY_WEIGHTS from data_generator.py encode this: critical
+# errors (fraud, duplicate invoices) score higher in weighted F1, so an agent
+# that catches high-severity issues ranks above one that only catches the easy
+# ones — even if their raw F1 scores are identical.
+#
+# WHY PARTIAL CREDIT (0.25)
+#
+# A finding on the right document with the wrong error_type is not nothing.
+# The agent located the problem area — it just mis-labelled the root cause.
+# 0.25 credit (one quarter of a full match) reflects this: meaningful signal,
+# but a clear penalty for imprecision. The 0.75 remaining weight goes to
+# effective_fp in the partial-credit precision calculation, so partial matches
+# still hurt — they just don't hurt as much as a completely wrong document.
+#
+# WHY THE REWARD VALUES ARE WHAT THEY ARE
+#
+#   +0.15 per true positive (severity-weighted)
+#   The base TP reward is the anchor. At max severity weight ~2.0, a critical
+#   find pays +0.30. At default weight 1.0, a routine find pays +0.15. This
+#   keeps the expected return per correct finding positive enough to be worth
+#   the effort, while remaining bounded so a single lucky guess doesn't dominate
+#   the episode score.
+#
+#   +0.04 per partial match
+#   Roughly 27% of the TP reward. Enough to give the agent a gradient signal
+#   toward the right document, not enough to make "right doc, wrong label" a
+#   viable strategy.
+#
+#   -0.05 per false positive
+#   This is intentionally softer than the TP reward. The asymmetry is
+#   deliberate: in auditing, missing a real error (false negative) is generally
+#   more costly than a false alarm. A -0.05 FP penalty means the break-even
+#   point for guessing is a ~33% hit rate per guess (0.15 × 0.33 ≈ 0.05).
+#   Below that hit rate, guessing costs more than it gains. Red herrings in the
+#   data push the realistic hit rate for undiscriminating agents well below 33%,
+#   making "flag everything" a losing strategy without requiring a punitive FP
+#   penalty that would make cautious agents too conservative.
+#
+#   -0.02 step penalty + -0.005 × step_number decay
+#   Discourages agents from submitting redundant steps or spreading findings
+#   across many small batches. The decay makes early, confident submissions
+#   worth more than late, hedging ones — which mirrors real audit practice where
+#   efficiency matters.
+#
+#   +0.30 recall bonus (recall >= 0.8) on final step
+#   A substantial bonus for catching most of what's there. 0.80 recall was
+#   chosen as the threshold because it's achievable with competent reasoning but
+#   not trivially so — the Llama 3.1 8B baseline lands around 0.33–0.68 recall
+#   across tasks. The +0.30 value is large enough to be the deciding factor in
+#   close episodes, creating a real incentive to push coverage.
+#
+#   +0.10 precision bonus (precision >= 0.9) on final step
+#   Smaller than the recall bonus because precision is easier to game (just
+#   submit fewer findings). The bonus rewards agents that are both comprehensive
+#   AND accurate, but doesn't overweight precision at recall's expense.
+#
+#   -0.20 recall penalty (recall < 0.3) on final step
+#   A floor penalty for agents that barely try. Without this, an agent could
+#   accumulate small per-step gains while submitting almost nothing. 0.30 recall
+#   is the minimum bar for a submission to be considered a genuine attempt.
+#
+# WHY NO LLM-AS-JUDGE
+#
+# Every score here is computed from exact (document_id, error_type) matches.
+# Same findings always produce the same score, regardless of when or where the
+# environment runs. This matters for RL training: a stochastic reward signal
+# adds noise that makes it harder for the agent to learn which behaviors
+# actually improve performance.
+# ---------------------------------------------------------------------------
 def compute_step_reward(
     new_findings: List[Dict[str, Any]],
     all_findings_so_far: List[Dict[str, Any]],
