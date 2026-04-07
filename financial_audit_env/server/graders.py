@@ -20,6 +20,22 @@ from typing import Any, Dict, List, Optional
 from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 
 
+# ---------------------------------------------------------------------------
+# Phase-2 validator requires every task score to be strictly in (0, 1).
+# Clamp to [EPSILON, 1-EPSILON] so we never return exactly 0.0 or 1.0.
+# ---------------------------------------------------------------------------
+_SCORE_EPSILON = 0.001
+
+
+def _clamp_score(score: float) -> float:
+    """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
+    if score <= 0.0:
+        return _SCORE_EPSILON
+    if score >= 1.0:
+        return 1.0 - _SCORE_EPSILON
+    return score
+
+
 def compute_f1_score(
     findings: List[Dict[str, Any]],
     ground_truth: List[Dict[str, str]],
@@ -201,12 +217,13 @@ def compute_f1_score(
 
     return {
         # Primary score (backwards compatible)
-        "score": round(f1, 4),
+        # Clamped to (0, 1) exclusive — Phase-2 validator requirement
+        "score": round(_clamp_score(f1), 4),
         "precision": round(precision, 4),
         "recall": round(recall, 4),
-        # Enhanced scores
-        "weighted_score": round(weighted_f1, 4),
-        "partial_credit_score": round(partial_credit_f1, 4),
+        # Enhanced scores (also clamped)
+        "weighted_score": round(_clamp_score(weighted_f1), 4),
+        "partial_credit_score": round(_clamp_score(partial_credit_f1), 4),
         # Counts
         "true_positives": true_positives,
         "false_positives": len(false_positive_list),

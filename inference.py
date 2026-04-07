@@ -24,10 +24,18 @@ import time
 from typing import Any, Dict, List, Optional
 
 import requests
-from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    from openai import OpenAI
+except ImportError:
+    print("ERROR: 'openai' package not installed. Run: pip install openai>=1.0.0", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional — env vars can be set directly
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("inference")

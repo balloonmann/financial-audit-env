@@ -1,0 +1,5 @@
+# Inference dependencies — used by the evaluation pipeline's inference container.
+# These are the packages needed to run inference.py.
+openai>=1.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
