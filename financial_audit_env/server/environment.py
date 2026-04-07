@@ -399,22 +399,23 @@ class FinancialAuditEnvironment(Environment):
             return {"noise_level": 0.3, "suggestion": "default"}
 
         avg_score = sum(self._score_history[-5:]) / len(self._score_history[-5:])
+        clamped_avg = 0.01 if avg_score <= 0.0 else (0.99 if avg_score >= 1.0 else avg_score)
 
         if avg_score >= 0.8:
             return {
                 "noise_level": 0.7,
                 "suggestion": "increase_difficulty",
-                "avg_recent_score": round(avg_score, 4),
+                "avg_recent_score": round(clamped_avg, 4),
             }
         elif avg_score >= 0.5:
             return {
                 "noise_level": 0.5,
                 "suggestion": "maintain",
-                "avg_recent_score": round(avg_score, 4),
+                "avg_recent_score": round(clamped_avg, 4),
             }
         else:
             return {
                 "noise_level": 0.2,
                 "suggestion": "decrease_difficulty",
-                "avg_recent_score": round(avg_score, 4),
+                "avg_recent_score": round(clamped_avg, 4),
             }

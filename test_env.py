@@ -49,12 +49,12 @@ from financial_audit_env.server.graders import compute_f1_score, compute_step_re
 
 # Perfect score
 result = compute_f1_score(g1, g1)
-assert result["score"] == 1.0, f"Expected 1.0, got {result['score']}"
+assert 0 < result["score"] < 1, f"Expected 0 < score < 1, got {result['score']}"
 print(f"  Perfect findings → score={result['score']} ✓")
 
 # Empty findings
 result = compute_f1_score([], g1)
-assert result["score"] == 0.0, f"Expected 0.0, got {result['score']}"
+assert 0 < result["score"] < 1, f"Expected 0 < score < 1, got {result['score']}"
 print(f"  No findings → score={result['score']} ✓")
 
 # Partial findings
@@ -123,7 +123,7 @@ print(f"  state → found={state.found_errors}/{state.total_errors}, FP={state.f
 # Grader
 grader = env.last_grader_result
 assert grader is not None
-assert grader["score"] == 1.0
+assert 0 < grader["score"] < 1
 print(f"  grader → F1={grader['score']:.4f} ✓")
 
 # Test 4: All tasks

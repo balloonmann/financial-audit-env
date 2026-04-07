@@ -22,18 +22,21 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 
 # ---------------------------------------------------------------------------
 # Phase-2 validator requires every task score to be strictly in (0, 1).
-# Clamp to [EPSILON, 1-EPSILON] so we never return exactly 0.0 or 1.0.
+# We enforce: final_score = clamp(round(raw_score, N))
 # ---------------------------------------------------------------------------
 _SCORE_EPSILON = 0.01
-
 
 def _clamp_score(score: float) -> float:
     """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
     if score <= 0.0:
         return _SCORE_EPSILON
-    if score >= 1.0:
+    elif score >= 1.0:
         return 1.0 - _SCORE_EPSILON
     return score
+
+def strict_round_clamp(raw_score: float, n_digits: int = 4) -> float:
+    """Safely round then clamp to guarantee the result is strictly in (0, 1)."""
+    return _clamp_score(round(raw_score, n_digits))
 
 
 def compute_f1_score(
@@ -105,28 +108,28 @@ def compute_f1_score(
     if true_positives + false_positives > 0:
         precision = true_positives / (true_positives + false_positives)
     else:
-        precision = 0.0
+        precision = 0
 
     if total_errors > 0:
         recall = true_positives / total_errors
     else:
-        recall = 1.0
+        recall = 1
 
     if precision + recall > 0:
         f1 = 2 * (precision * recall) / (precision + recall)
     else:
-        f1 = 0.0
+        f1 = 0
 
     # --- Weighted F1 (severity-weighted) ---
     weighted_tp = sum(
-        ERROR_SEVERITY_WEIGHTS.get(et, 1.0) for (_, et) in matched
+        ERROR_SEVERITY_WEIGHTS.get(et, 1) for (_, et) in matched
     )
     weighted_total = sum(
-        ERROR_SEVERITY_WEIGHTS.get(gt[1], 1.0) for gt in gt_set
+        ERROR_SEVERITY_WEIGHTS.get(gt[1], 1) for gt in gt_set
     )
     weighted_fp = sum(
         ERROR_SEVERITY_WEIGHTS.get(
-            fp.get("error_type", "").strip().lower(), 1.0
+            fp.get("error_type", "").strip().lower(), 1
         )
         for fp in false_positive_list
     )
@@ -134,17 +137,17 @@ def compute_f1_score(
     if weighted_tp + weighted_fp > 0:
         w_precision = weighted_tp / (weighted_tp + weighted_fp)
     else:
-        w_precision = 0.0
+        w_precision = 0
 
     if weighted_total > 0:
         w_recall = weighted_tp / weighted_total
     else:
-        w_recall = 1.0
+        w_recall = 1
 
     if w_precision + w_recall > 0:
         weighted_f1 = 2 * (w_precision * w_recall) / (w_precision + w_recall)
     else:
-        weighted_f1 = 0.0
+        weighted_f1 = 0
 
     # --- Partial Credit Score ---
     partial_credit_value = len(partial_matches) * 0.25
@@ -154,17 +157,17 @@ def compute_f1_score(
     if effective_tp + effective_fp > 0:
         pc_precision = effective_tp / (effective_tp + effective_fp)
     else:
-        pc_precision = 0.0
+        pc_precision = 0    
 
     if total_errors > 0:
         pc_recall = min(effective_tp / total_errors, 1.0)
     else:
-        pc_recall = 1.0
+        pc_recall = 1
 
     if pc_precision + pc_recall > 0:
         partial_credit_f1 = 2 * (pc_precision * pc_recall) / (pc_precision + pc_recall)
     else:
-        partial_credit_f1 = 0.0
+        partial_credit_f1 = 0
 
     # --- Confusion Matrix ---
     # Track per-error_type: found, missed, false_flagged
@@ -187,7 +190,7 @@ def compute_f1_score(
             "correctly_found": found_count,
             "missed": gt_count - found_count,
             "false_positives": false_flagged,
-            "severity_weight": ERROR_SEVERITY_WEIGHTS.get(et, 1.0),
+            "severity_weight": ERROR_SEVERITY_WEIGHTS.get(et, 1),
         }
 
     # --- Risk Score (monetary) ---
@@ -217,11 +220,11 @@ def compute_f1_score(
 
     return {
         # All numeric scores clamped to (0, 1) exclusive — Phase-2 validator requirement
-        "score": _clamp_score(round(f1, 4)),
-        "precision": _clamp_score(round(precision, 4)),
-        "recall": _clamp_score(round(recall, 4)),
-        "weighted_score": _clamp_score(round(weighted_f1, 4)),
-        "partial_credit_score": _clamp_score(round(partial_credit_f1, 4)),
+        "score": strict_round_clamp(f1, 4),
+        "precision": strict_round_clamp(precision, 4),
+        "recall": strict_round_clamp(recall, 4),
+        "weighted_score": strict_round_clamp(weighted_f1, 4),
+        "partial_credit_score": strict_round_clamp(partial_credit_f1, 4),
         # Counts
         "true_positives": true_positives,
         "false_positives": len(false_positive_list),
@@ -354,7 +357,7 @@ def compute_step_reward(
         +0.10  bonus if final submission and precision ≥ 0.9
         -0.20  penalty if final submission and recall < 0.3
     """
-    reward = 0.0
+    reward = 0
 
     # Step penalty + decay
     reward -= 0.02
@@ -388,7 +391,7 @@ def compute_step_reward(
 
         if key in gt_set and key not in prev_matched:
             # Severity-weighted reward
-            weight = ERROR_SEVERITY_WEIGHTS.get(error_type, 1.0)
+            weight = ERROR_SEVERITY_WEIGHTS.get(error_type, 1)
             reward += 0.15 * weight  # New true positive
             prev_matched.add(key)
         elif doc_id in gt_by_doc and error_type not in gt_by_doc[doc_id]:

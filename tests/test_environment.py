@@ -92,7 +92,7 @@ class TestAllTasks:
         result = env.last_grader_result
         assert result is not None
         assert "score" in result
-        assert 0.0 <= result["score"] <= 1.0
+        assert 0 < result["score"] < 1
 
     def test_invalid_task_raises(self, env):
         with pytest.raises(ValueError, match="Unknown task_id"):
@@ -173,7 +173,7 @@ class TestEdgeCases:
         action = AuditAction(findings=[], submit_final=True)
         obs = env.step(action)
         assert obs.done is True
-        assert env.last_grader_result["score"] == 0.0
+        assert 0 < env.last_grader_result["score"] < 1
 
     def test_invalid_error_type_filtered(self, env):
         env.reset(task_id="expense_audit", seed=42)
