@@ -77,16 +77,27 @@ def compute_f1_score(
     matched = set()
     partial_matches = []  # Right doc, wrong error_type
     false_positive_list = []
+    duplicates_list = []
 
     for finding in findings:
         doc_id = finding.get("document_id", "").strip().upper()
         error_type = finding.get("error_type", "").strip().lower()
         key = (doc_id, error_type)
 
-        if key in gt_set and key not in matched:
-            matched.add(key)
+        if key in gt_set:
+            if key not in matched:
+                matched.add(key)
+            else:
+                # STRONGER DUPLICATE HANDLING:
+                # Explicitly track redundant findings separately from false positives.
+                duplicates_list.append({
+                    "document_id": finding.get("document_id", ""),
+                    "error_type": finding.get("error_type", ""),
+                })
         elif doc_id in gt_by_doc and error_type not in gt_by_doc[doc_id]:
-            # Right document, wrong error type → partial credit
+            # EXPLICIT PARTIAL-CREDIT POLICY:
+            # We award partial credit because the agent successfully localized the issue
+            # to the correct document, even though the specific error classification was wrong.
             partial_matches.append({
                 "document_id": finding.get("document_id", ""),
                 "error_type": finding.get("error_type", ""),
@@ -229,6 +240,8 @@ def compute_f1_score(
         "true_positives": true_positives,
         "false_positives": len(false_positive_list),
         "false_negatives": false_negatives,
+        "weighted_false_negatives": round(weighted_total - weighted_tp, 4),
+        "duplicates": len(duplicates_list),
         "partial_matches": len(partial_matches),
         "total_findings": total_findings,
         "total_errors": total_errors,
@@ -238,6 +251,7 @@ def compute_f1_score(
         ],
         "missed_errors": missed_errors,
         "false_positive_list": false_positive_list,
+        "duplicate_list": duplicates_list,
         "partial_match_list": partial_matches,
         # Confusion matrix
         "confusion_matrix": confusion_matrix,
@@ -389,16 +403,22 @@ def compute_step_reward(
         error_type = finding.get("error_type", "").strip().lower()
         key = (doc_id, error_type)
 
-        if key in gt_set and key not in prev_matched:
-            # Severity-weighted reward
-            weight = ERROR_SEVERITY_WEIGHTS.get(error_type, 1)
-            reward += 0.15 * weight  # New true positive
-            prev_matched.add(key)
+        if key in gt_set:
+            if key not in prev_matched:
+                # Severity-weighted reward
+                weight = ERROR_SEVERITY_WEIGHTS.get(error_type, 1)
+                reward += 0.15 * weight  # New true positive
+                prev_matched.add(key)
+            else:
+                # STRONGER DUPLICATE HANDLING: explicitly punish redundant assertions
+                reward -= 0.10  # Duplicate penalty
         elif doc_id in gt_by_doc and error_type not in gt_by_doc[doc_id]:
-            # Partial match — right document, wrong error type
+            # EXPLICIT PARTIAL-CREDIT POLICY:
+            # We compensate the agent for successfully isolating a damaged document (+0.04),
+            # providing a gradient signal toward the vicinity of the error.
             reward += 0.04
         else:
-            reward -= 0.05  # False positive or duplicate
+            reward -= 0.05  # Standard false positive penalty
 
     # Final submission bonuses/penalties
     # Note: uses raw precision/recall (not clamped) for threshold comparisons

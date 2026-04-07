@@ -55,7 +55,7 @@ class TestF1Score:
         doubled = ground_truth + ground_truth
         result = compute_f1_score(doubled, ground_truth)
         assert result["true_positives"] == len(ground_truth)
-        assert result["false_positives"] >= len(ground_truth)  # Duplicates are FP
+        assert result["duplicates"] >= len(ground_truth)  # Duplicates are now tracked separately
 
     def test_score_changes_with_different_findings(self, ground_truth):
         """Verify grader isn't returning constant scores."""
