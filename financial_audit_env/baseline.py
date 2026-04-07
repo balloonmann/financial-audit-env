@@ -336,8 +336,8 @@ def run_baseline_single_task(
         "task_name": task_info["name"],
         "difficulty": task_info["difficulty"],
         "score": grader_data.get("score", 0.01),
-        "precision": grader_data.get("precision", 0.0),
-        "recall": grader_data.get("recall", 0.0),
+        "precision": grader_data.get("precision", 0.01),
+        "recall": grader_data.get("recall", 0.01),
         "true_positives": grader_data.get("true_positives", 0),
         "false_positives": grader_data.get("false_positives", 0),
         "total_errors": grader_data.get("total_errors", 0),
@@ -377,7 +377,7 @@ def run_baseline_all_tasks(
         hf_token = os.environ.get("HF_TOKEN", "")
 
     results = {}
-    total_score = 0.0
+    total_score = 0.01
 
     for task_id in TASK_IDS:
         if env_url:
@@ -436,8 +436,8 @@ def _run_baseline_local(env: Any, task_id: str, hf_token: str, seed: int) -> Dic
         "task_name": task["name"],
         "difficulty": task["difficulty"],
         "score": grader.get("score", 0.01),
-        "precision": grader.get("precision", 0.0),
-        "recall": grader.get("recall", 0.0),
+        "precision": grader.get("precision", 0.01),
+        "recall": grader.get("recall", 0.01),
         "true_positives": grader.get("true_positives", 0),
         "false_positives": grader.get("false_positives", 0),
         "total_errors": grader.get("total_errors", 0),

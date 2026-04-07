@@ -108,17 +108,17 @@ def compute_f1_score(
     if true_positives + false_positives > 0:
         precision = true_positives / (true_positives + false_positives)
     else:
-        precision = 0
+        precision = 0.01
 
     if total_errors > 0:
         recall = true_positives / total_errors
     else:
-        recall = 1
+        recall = 0.99
 
     if precision + recall > 0:
         f1 = 2 * (precision * recall) / (precision + recall)
     else:
-        f1 = 0
+        f1 = 0.01
 
     # --- Weighted F1 (severity-weighted) ---
     weighted_tp = sum(
@@ -137,17 +137,17 @@ def compute_f1_score(
     if weighted_tp + weighted_fp > 0:
         w_precision = weighted_tp / (weighted_tp + weighted_fp)
     else:
-        w_precision = 0
+        w_precision = 0.01
 
     if weighted_total > 0:
         w_recall = weighted_tp / weighted_total
     else:
-        w_recall = 1
+        w_recall = 0.99
 
     if w_precision + w_recall > 0:
         weighted_f1 = 2 * (w_precision * w_recall) / (w_precision + w_recall)
     else:
-        weighted_f1 = 0
+        weighted_f1 = 0.01
 
     # --- Partial Credit Score ---
     partial_credit_value = len(partial_matches) * 0.25
@@ -157,17 +157,17 @@ def compute_f1_score(
     if effective_tp + effective_fp > 0:
         pc_precision = effective_tp / (effective_tp + effective_fp)
     else:
-        pc_precision = 0    
+        pc_precision = 0.01    
 
     if total_errors > 0:
-        pc_recall = min(effective_tp / total_errors, 1.0)
+        pc_recall = min(effective_tp / total_errors, 0.99)
     else:
-        pc_recall = 1
+        pc_recall = 0.99
 
     if pc_precision + pc_recall > 0:
         partial_credit_f1 = 2 * (pc_precision * pc_recall) / (pc_precision + pc_recall)
     else:
-        partial_credit_f1 = 0
+        partial_credit_f1 = 0.01
 
     # --- Confusion Matrix ---
     # Track per-error_type: found, missed, false_flagged

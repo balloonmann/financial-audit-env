@@ -339,8 +339,8 @@ async def submit_to_leaderboard(
     model: str,
     task_id: str,
     score: float,
-    weighted_score: float = 0.0,
-    risk_mitigation_pct: float = 0.0,
+    weighted_score: float = 0.01,
+    risk_mitigation_pct: float = 0.01,
 ):
     """Submit a score to the leaderboard."""
     entry = {
