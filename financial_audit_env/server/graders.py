@@ -217,11 +217,11 @@ def compute_f1_score(
 
     return {
         # All numeric scores clamped to (0, 1) exclusive — Phase-2 validator requirement
-        "score": round(_clamp_score(f1), 4),
-        "precision": round(_clamp_score(precision), 4),
-        "recall": round(_clamp_score(recall), 4),
-        "weighted_score": round(_clamp_score(weighted_f1), 4),
-        "partial_credit_score": round(_clamp_score(partial_credit_f1), 4),
+        "score": _clamp_score(round(f1, 4)),
+        "precision": _clamp_score(round(precision, 4)),
+        "recall": _clamp_score(round(recall, 4)),
+        "weighted_score": _clamp_score(round(weighted_f1, 4)),
+        "partial_credit_score": _clamp_score(round(partial_credit_f1, 4)),
         # Counts
         "true_positives": true_positives,
         "false_positives": len(false_positive_list),
