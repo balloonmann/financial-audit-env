@@ -80,8 +80,9 @@ def log_step(
     """Emit the [STEP] structured log line."""
     error_str = error if error else "null"
     done_str = "true" if done else "false"
+    clamped_reward = max(1e-6, min(1.0 - 1e-6, reward))
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_str} error={error_str}",
+        f"[STEP] step={step} action={action} reward={clamped_reward:.6f} done={done_str} error={error_str}",
         flush=True,
     )
 
@@ -94,7 +95,7 @@ def log_end(
 ) -> None:
     """Emit the [END] structured log line."""
     success_str = "true" if success else "false"
-    rewards_str = ",".join([f"{r:.2f}" for r in rewards])
+    rewards_str = ",".join([f"{max(1e-6, min(1.0 - 1e-6, r)):.6f}" for r in rewards])
     print(
         f"[END] success={success_str} steps={steps} rewards={rewards_str}",
         flush=True,
@@ -306,12 +307,12 @@ def main():
     parser.add_argument("--seed", type=int, default=SEED, help="Seed for reproducibility")
     args = parser.parse_args()
 
-    print(f"{'='*60}")
-    print(f" OpenEnv Financial Audit - Inference Configuration")
-    print(f" Model Identifier: {MODEL_NAME}")
-    print(f" API Base URL:     {API_BASE_URL}")
-    print(f" Environment URL:  {args.env_url}")
-    print(f"{'='*60}\n")
+    print(f"{'='*60}", file=sys.stderr)
+    print(f" OpenEnv Financial Audit - Inference Configuration", file=sys.stderr)
+    print(f" Model Identifier: {MODEL_NAME}", file=sys.stderr)
+    print(f" API Base URL:     {API_BASE_URL}", file=sys.stderr)
+    print(f" Environment URL:  {args.env_url}", file=sys.stderr)
+    print(f"{'='*60}\n", file=sys.stderr)
 
     client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
@@ -324,18 +325,18 @@ def main():
         results[task_id] = res
         total_score += res["score"]
         if idx < len(tasks_to_run) - 1:
-            print("\n")
+            print("\n", file=sys.stderr)
 
-    print(f"\n{'='*60}")
-    print(f" RESULTS")
-    print(f"{'='*60}")
-    print(f"{'Task':<30} {'Difficulty':<12} {'Score':<8} {'P':<8} {'R':<8}")
-    print(f"{'-'*60}")
+    print(f"\n{'='*60}", file=sys.stderr)
+    print(f" RESULTS", file=sys.stderr)
+    print(f"{'='*60}", file=sys.stderr)
+    print(f"{'Task':<30} {'Difficulty':<12} {'Score':<8} {'P':<8} {'R':<8}", file=sys.stderr)
+    print(f"{'-'*60}", file=sys.stderr)
     for k, v in results.items():
-        print(f"{v['task_name']:<30} {v['difficulty']:<12} {v['score']:<8.4f} {v['precision']:<8.2f} {v['recall']:<8.2f}")
-    print(f"{'-'*60}")
-    print(f"{'AVERAGE':<42} {total_score / len(tasks_to_run):<8.4f}")
-    print(f"{'='*60}")
+        print(f"{v['task_name']:<30} {v['difficulty']:<12} {v['score']:<8.4f} {v['precision']:<8.2f} {v['recall']:<8.2f}", file=sys.stderr)
+    print(f"{'-'*60}", file=sys.stderr)
+    print(f"{'AVERAGE':<42} {total_score / len(tasks_to_run):<8.4f}", file=sys.stderr)
+    print(f"{'='*60}", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

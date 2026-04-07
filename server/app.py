@@ -306,7 +306,7 @@ async def get_grader_score(session_id: Optional[str] = None):
 
     def final_clamp(val: float) -> float:
         """Ultimate pit stop: guarantees NO score is ever less than or equal to 0, or greater than or equal to 1."""
-        return 0.01 if val <= 0.0 else (0.99 if val >= 1.0 else val)
+        return 1e-6 if val <= 0.0 else (1.0 - 1e-6 if val >= 1.0 else val)
 
     return {
         "status": "completed",
@@ -339,8 +339,8 @@ async def submit_to_leaderboard(
     model: str,
     task_id: str,
     score: float,
-    weighted_score: float = 0.01,
-    risk_mitigation_pct: float = 0.01,
+    weighted_score: float = 1e-6,
+    risk_mitigation_pct: float = 1e-6,
 ):
     """Submit a score to the leaderboard."""
     entry = {

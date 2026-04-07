@@ -24,7 +24,7 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 # Phase-2 validator requires every task score to be strictly in (0, 1).
 # We enforce: final_score = clamp(round(raw_score, N))
 # ---------------------------------------------------------------------------
-_SCORE_EPSILON = 0.01
+_SCORE_EPSILON = 1e-6
 
 def _clamp_score(score: float) -> float:
     """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
@@ -411,4 +411,4 @@ def compute_step_reward(
         if result["recall"] < 0.3:
             reward -= 0.20
 
-    return round(reward, 4)
+    return strict_round_clamp(reward, 4)

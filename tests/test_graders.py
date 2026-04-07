@@ -175,7 +175,7 @@ class TestStepReward:
     def test_false_positive_negative_reward(self, ground_truth):
         fake = [{"document_id": "FAKE", "error_type": "fake"}]
         reward = compute_step_reward(fake, fake, ground_truth, 1, False)
-        assert reward < 0  # False positive + step penalty
+        assert reward <= 1e-6  # False positive + step penalty (clamped to epsilon)
 
     def test_reward_decay_over_steps(self, ground_truth):
         findings = [ground_truth[0]]
@@ -193,5 +193,5 @@ class TestStepReward:
     def test_final_penalty_low_recall(self, ground_truth):
         fake = [{"document_id": "FAKE", "error_type": "fake"}]
         reward = compute_step_reward(fake, fake, ground_truth, 1, True)
-        # Should get the low-recall penalty
-        assert reward < 0
+        # Should get the low-recall penalty (clamped to epsilon)
+        assert reward <= 1e-6
