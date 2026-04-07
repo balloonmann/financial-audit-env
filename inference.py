@@ -266,7 +266,10 @@ def run_agent_single_task(
         grader_resp.raise_for_status()
         grader_data = grader_resp.json()
 
-        score = grader_data.get("score", 0.01)
+        def final_clamp(val: float) -> float:
+            return 0.01 if val <= 0.0 else (0.99 if val >= 1.0 else val)
+
+        score = final_clamp(grader_data.get("score", 0.01))
         success = score >= SUCCESS_SCORE_THRESHOLD
 
         result = {
@@ -274,8 +277,8 @@ def run_agent_single_task(
             "task_name": task_info["name"],
             "difficulty": task_info["difficulty"],
             "score": score,
-            "precision": grader_data.get("precision", 0.0),
-            "recall": grader_data.get("recall", 0.0),
+            "precision": final_clamp(grader_data.get("precision", 0.01)),
+            "recall": final_clamp(grader_data.get("recall", 0.01)),
         }
 
         logger.info(f"[{task_id}] Score: {result['score']:.4f} (P={result['precision']:.2f}, R={result['recall']:.2f})")

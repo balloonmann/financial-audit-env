@@ -304,20 +304,24 @@ async def get_grader_score(session_id: Optional[str] = None):
             "message": "No episode completed. Call /reset then /step with submit_final=True.",
         }
 
+    def final_clamp(val: float) -> float:
+        """Ultimate pit stop: guarantees NO score is ever less than or equal to 0, or greater than or equal to 1."""
+        return 0.01 if val <= 0.0 else (0.99 if val >= 1.0 else val)
+
     return {
         "status": "completed",
         "task_id": env.state.task_id,
-        # Primary score (backwards compatible)
-        "score": result["score"],
-        "precision": result["precision"],
-        "recall": result["recall"],
+        # Primary score (final pit stop applied)
+        "score": final_clamp(result["score"]),
+        "precision": final_clamp(result["precision"]),
+        "recall": final_clamp(result["recall"]),
         "true_positives": result["true_positives"],
         "false_positives": result["false_positives"],
         "false_negatives": result["false_negatives"],
         "total_errors": result["total_errors"],
-        # Enhanced scoring
-        "weighted_score": result.get("weighted_score", result["score"]),
-        "partial_credit_score": result.get("partial_credit_score", result["score"]),
+        # Enhanced scoring with final clamp
+        "weighted_score": final_clamp(result.get("weighted_score", result["score"])),
+        "partial_credit_score": final_clamp(result.get("partial_credit_score", result["score"])),
         "partial_matches": result.get("partial_matches", 0),
         # Confusion matrix
         "confusion_matrix": result.get("confusion_matrix", {}),

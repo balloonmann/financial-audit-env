@@ -1,0 +1,6 @@
+﻿hf	https://huggingface.co/spaces/balloonmann/financial-audit-env (fetch)
+hf	https://huggingface.co/spaces/balloonmann/financial-audit-env (push)
+origin	https://github.com/balloonmann/financial-audit-env.git (fetch)
+origin	https://github.com/balloonmann/financial-audit-env.git (push)
+space	https://huggingface.co/spaces/balloonmann/financial_audit_env (fetch)
+space	https://huggingface.co/spaces/balloonmann/financial_audit_env (push)
