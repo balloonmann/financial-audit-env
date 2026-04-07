@@ -266,7 +266,7 @@ def run_agent_single_task(
         grader_resp.raise_for_status()
         grader_data = grader_resp.json()
 
-        score = grader_data.get("score", 0.0)
+        score = grader_data.get("score", 0.01)
         success = score >= SUCCESS_SCORE_THRESHOLD
 
         result = {
@@ -286,7 +286,7 @@ def run_agent_single_task(
             "task_id": task_id,
             "task_name": task_id,
             "difficulty": "unknown",
-            "score": 0.0,
+            "score": 0.01,
             "precision": 0.0,
             "recall": 0.0,
         }

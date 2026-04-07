@@ -24,7 +24,7 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 # Phase-2 validator requires every task score to be strictly in (0, 1).
 # Clamp to [EPSILON, 1-EPSILON] so we never return exactly 0.0 or 1.0.
 # ---------------------------------------------------------------------------
-_SCORE_EPSILON = 0.001
+_SCORE_EPSILON = 0.01
 
 
 def _clamp_score(score: float) -> float:
@@ -46,10 +46,10 @@ def compute_f1_score(
 
     Returns:
         Dict with keys:
-        - score: float [0.0, 1.0] (unweighted F1 — primary metric)
-        - weighted_score: float [0.0, 1.0] (severity-weighted F1)
-        - partial_credit_score: float [0.0, 1.0] (with partial credit)
-        - precision/recall: standard metrics
+        - score: float (0, 1) exclusive (unweighted F1 — primary metric)
+        - weighted_score: float (0, 1) exclusive (severity-weighted F1)
+        - partial_credit_score: float (0, 1) exclusive (with partial credit)
+        - precision/recall: standard metrics, clamped to (0, 1) exclusive
         - true_positives/false_positives/false_negatives: counts
         - total_findings/total_errors: counts
         - matched_errors/missed_errors/false_positive_list: details
@@ -216,12 +216,10 @@ def compute_f1_score(
             })
 
     return {
-        # Primary score (backwards compatible)
-        # Clamped to (0, 1) exclusive — Phase-2 validator requirement
+        # All numeric scores clamped to (0, 1) exclusive — Phase-2 validator requirement
         "score": round(_clamp_score(f1), 4),
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        # Enhanced scores (also clamped)
+        "precision": round(_clamp_score(precision), 4),
+        "recall": round(_clamp_score(recall), 4),
         "weighted_score": round(_clamp_score(weighted_f1), 4),
         "partial_credit_score": round(_clamp_score(partial_credit_f1), 4),
         # Counts
@@ -400,6 +398,7 @@ def compute_step_reward(
             reward -= 0.05  # False positive or duplicate
 
     # Final submission bonuses/penalties
+    # Note: uses raw precision/recall (not clamped) for threshold comparisons
     if is_final:
         result = compute_f1_score(all_findings_so_far, ground_truth)
         if result["recall"] >= 0.8:
