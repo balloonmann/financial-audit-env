@@ -1,4 +1,3 @@
-# Copyright (c) 2026. All rights reserved.
 # Financial Audit Environment — Deterministic graders.
 #
 # Each grader computes scores by comparing the agent's submitted findings
@@ -24,7 +23,7 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 # Phase-2 validator requires every task score to be strictly in (0, 1).
 # We enforce: final_score = clamp(round(raw_score, N))
 # ---------------------------------------------------------------------------
-_SCORE_EPSILON = 1e-6
+_SCORE_EPSILON = 0.0001
 
 def _clamp_score(score: float) -> float:
     """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
@@ -36,7 +35,13 @@ def _clamp_score(score: float) -> float:
 
 def strict_round_clamp(raw_score: float, n_digits: int = 4) -> float:
     """Safely round then clamp to guarantee the result is strictly in (0, 1)."""
-    return _clamp_score(round(raw_score, n_digits))
+    epsilon = 10 ** (-n_digits)
+    rounded = round(raw_score, n_digits)
+    if rounded <= 0.0:
+        return epsilon
+    elif rounded >= 1.0:
+        return 1.0 - epsilon
+    return rounded
 
 
 def compute_f1_score(
