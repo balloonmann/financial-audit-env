@@ -144,7 +144,7 @@ class FinancialAuditEnvironment(Environment):
             summary = self._build_data_summary()
             return AuditObservation(
                 done=False,
-                reward=0.01,
+                reward=0.0,
                 task_id=task_id,
                 task_description=task["description"],
                 documents={},  # No documents yet — must investigate first
@@ -167,7 +167,7 @@ class FinancialAuditEnvironment(Environment):
             # Standard mode: full documents immediately
             return AuditObservation(
                 done=False,
-                reward=0.01,
+                reward=0.0,
                 task_id=task_id,
                 task_description=task["description"],
                 documents=self._documents,
@@ -234,15 +234,16 @@ class FinancialAuditEnvironment(Environment):
         # Check if episode should end
         is_final = action.submit_final or step_num >= self._task["max_steps"]
 
-        # Compute step reward (dense signal with decay)
-        step_reward = compute_step_reward(
-            new_findings=new_finding_dicts,
-            all_findings_so_far=self._findings,
-            ground_truth=self._ground_truth,
-            step_number=step_num,
-            is_final=is_final,
-            max_steps=self._task["max_steps"],
-        )
+        # Compute step reward
+        # We MUST ensure the sum of all step_rewards across the episode is exactly the final score.
+        # Otherwise, the evaluator's `sum(rewards)` will exceed 1.0. 
+        if not is_final:
+            step_reward = 0.0
+        else:
+            final_grader = compute_f1_score(self._findings, self._ground_truth)
+            # The exact clamped F1 score
+            step_reward = max(0.01, min(0.99, final_grader["score"]))
+        
         self._episode_reward += step_reward
 
         # Compute running stats
@@ -341,7 +342,7 @@ class FinancialAuditEnvironment(Environment):
 
         return AuditObservation(
             done=False,
-            reward=0.01,  # Clamped cost for investigation step
+            reward=0.0,  # Clamped cost for investigation step removed to enforce episode sum strictly in (0, 1)
             task_id=self._task["id"] if self._task else "",
             task_description=self._task["description"] if self._task else "",
             documents=revealed_docs,
