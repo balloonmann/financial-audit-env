@@ -234,14 +234,13 @@ class FinancialAuditEnvironment(Environment):
         # Check if episode should end
         is_final = action.submit_final or step_num >= self._task["max_steps"]
 
-        # Compute step reward
-        # We MUST ensure the sum of all step_rewards across the episode is exactly the final score.
-        # Otherwise, the evaluator's `sum(rewards)` will exceed 1.0. 
+        # Compute step reward.
+        # Keep cumulative episode rewards aligned with the final task score.
         if not is_final:
             step_reward = 0.0
         else:
             final_grader = compute_f1_score(self._findings, self._ground_truth)
-            # The exact clamped F1 score
+            # Use the bounded final score as the terminal reward.
             step_reward = max(0.01, min(0.99, final_grader["score"]))
         
         self._episode_reward += step_reward

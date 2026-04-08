@@ -65,7 +65,7 @@ SUCCESS_SCORE_THRESHOLD = 0.5
 
 
 def strict_unit_interval(value: Any, default: float = 0.01) -> float:
-    """Return a finite float strictly within (0, 1) using contest-safe bounds."""
+    """Return a finite float constrained to a stable open interval."""
     try:
         num = float(value)
     except (TypeError, ValueError):

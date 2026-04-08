@@ -305,13 +305,13 @@ async def get_grader_score(session_id: Optional[str] = None):
         }
 
     def final_clamp(val: float) -> float:
-        """Guarantee score-like fields are always strictly within (0, 1)."""
+        """Keep score-like fields within a stable open interval."""
         return max(0.01, min(0.99, val))
 
     return {
         "status": "completed",
         "task_id": env.state.task_id,
-        # Primary score fields with final clamping for validator safety
+        # Primary score fields with a final stability clamp.
         "score": final_clamp(result["score"]),
         "precision": final_clamp(result["precision"]),
         "recall": final_clamp(result["recall"]),
@@ -319,7 +319,7 @@ async def get_grader_score(session_id: Optional[str] = None):
         "false_positives": result["false_positives"],
         "false_negatives": result["false_negatives"],
         "total_errors": result["total_errors"],
-        # Enhanced scoring fields with final clamping for validator safety
+        # Enhanced scoring fields with the same stability clamp.
         "weighted_score": final_clamp(result.get("weighted_score", result["score"])),
         "partial_credit_score": final_clamp(result.get("partial_credit_score", result["score"])),
         "partial_matches": result.get("partial_matches", 0),

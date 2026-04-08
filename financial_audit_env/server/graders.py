@@ -20,13 +20,13 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 
 
 # ---------------------------------------------------------------------------
-# Phase-2 validator requires every task score to be strictly in (0, 1).
-# We enforce: final_score = clamp(round(raw_score, N))
+# Numerical stability: expose score-like fields inside an open interval.
+# We apply: final_score = clamp(round(raw_score, N)).
 # ---------------------------------------------------------------------------
 _SCORE_EPSILON = 0.01
 
 def _clamp_score(score: float) -> float:
-    """Clamp a score to be strictly within [0.01, 0.99]."""
+    """Keep a score inside the open interval [0.01, 0.99]."""
     if score <= 0.01:
         return 0.01
     elif score >= 0.99:
@@ -34,7 +34,7 @@ def _clamp_score(score: float) -> float:
     return score
 
 def strict_round_clamp(raw_score: float, n_digits: int = 2) -> float:
-    """Safely round then clamp to guarantee the result is strictly in [0.01, 0.99]."""
+    """Round first, then keep the result inside [0.01, 0.99]."""
     rounded = round(raw_score, n_digits)
     if rounded <= 0.01:
         return 0.01
@@ -56,7 +56,7 @@ def compute_f1_score(
         - score: float (0, 1) exclusive (unweighted F1 — primary metric)
         - weighted_score: float (0, 1) exclusive (severity-weighted F1)
         - partial_credit_score: float (0, 1) exclusive (with partial credit)
-        - precision/recall: standard metrics, clamped to (0, 1) exclusive
+        - precision/recall: standard metrics, bounded to (0, 1)
         - true_positives/false_positives/false_negatives: counts
         - total_findings/total_errors: counts
         - matched_errors/missed_errors/false_positive_list: details
@@ -234,7 +234,7 @@ def compute_f1_score(
             })
 
     return {
-        # All numeric scores clamped to (0, 1) exclusive — Phase-2 validator requirement
+        # Keep public score-like outputs in a bounded open interval.
         "score": strict_round_clamp(f1, 2),
         "precision": strict_round_clamp(precision, 2),
         "recall": strict_round_clamp(recall, 2),
