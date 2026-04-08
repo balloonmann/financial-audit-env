@@ -223,4 +223,4 @@ class AuditState(State):
     # Enhanced tracking
     investigation_mode: bool = False
     revealed_categories: List[str] = Field(default_factory=list)
-    cumulative_score: float = 0.0
+    cumulative_score: float = 0.01

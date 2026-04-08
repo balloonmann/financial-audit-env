@@ -80,7 +80,7 @@ def log_step(
     """Emit the [STEP] structured log line."""
     error_str = error if error else "null"
     done_str = "true" if done else "false"
-    clamped_reward = max(1e-6, min(1.0 - 1e-6, reward))
+    clamped_reward = max(0.01, min(0.99, reward))
     print(
         f"[STEP] step={step} action={action} reward={clamped_reward:.6f} done={done_str} error={error_str}",
         flush=True,
@@ -95,7 +95,7 @@ def log_end(
 ) -> None:
     """Emit the [END] structured log line."""
     success_str = "true" if success else "false"
-    rewards_str = ",".join([f"{max(1e-6, min(1.0 - 1e-6, r)):.6f}" for r in rewards])
+    rewards_str = ",".join([f"{max(0.01, min(0.99, r)):.6f}" for r in rewards])
     print(
         f"[END] success={success_str} steps={steps} rewards={rewards_str}",
         flush=True,
@@ -268,7 +268,7 @@ def run_agent_single_task(
         grader_data = grader_resp.json()
 
         def final_clamp(val: float) -> float:
-            return 0.01 if val <= 0.0 else (0.99 if val >= 1.0 else val)
+            return max(0.01, min(0.99, val))
 
         score = final_clamp(grader_data.get("score", 0.01))
         success = score >= SUCCESS_SCORE_THRESHOLD
