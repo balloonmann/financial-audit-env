@@ -62,6 +62,24 @@ SUCCESS_SCORE_THRESHOLD = 0.5
 # MANDATORY Structured Logging: [START], [STEP], [END]
 # ---------------------------------------------------------------------------
 
+
+def strict_unit_interval(value: Any, default: float = 0.01) -> float:
+    """Return a finite float strictly within (0, 1) using contest-safe bounds."""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        num = default
+
+    # NaN check that works without importing math.
+    if num != num:
+        num = default
+
+    if num <= 0.01:
+        return 0.01
+    if num >= 0.99:
+        return 0.99
+    return num
+
 def log_start(task: str, env: str, model: str) -> None:
     """Emit the [START] structured log line."""
     print(
@@ -80,7 +98,7 @@ def log_step(
     """Emit the [STEP] structured log line."""
     error_str = error if error else "null"
     done_str = "true" if done else "false"
-    clamped_reward = max(0.01, min(0.99, reward))
+    clamped_reward = strict_unit_interval(reward)
     print(
         f"[STEP] step={step} action={action} reward={clamped_reward:.6f} done={done_str} error={error_str}",
         flush=True,
@@ -95,9 +113,11 @@ def log_end(
 ) -> None:
     """Emit the [END] structured log line."""
     success_str = "true" if success else "false"
-    rewards_str = ",".join([f"{max(0.01, min(0.99, r)):.6f}" for r in rewards])
+    clamped_score = strict_unit_interval(score)
+    safe_rewards = rewards if rewards else [clamped_score]
+    rewards_str = ",".join([f"{strict_unit_interval(r):.6f}" for r in safe_rewards])
     print(
-        f"[END] success={success_str} steps={steps} rewards={rewards_str}",
+        f"[END] success={success_str} steps={steps} score={clamped_score:.6f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -248,7 +268,7 @@ def run_agent_single_task(
         step_resp.raise_for_status()
         step_data = step_resp.json()
 
-        step_reward = step_data.get("reward", 0.01) or 0.01
+        step_reward = strict_unit_interval(step_data.get("reward", 0.01) or 0.01)
         step_done = step_data.get("done", True)
         rewards.append(step_reward)
         steps_taken = 1
@@ -267,10 +287,7 @@ def run_agent_single_task(
         grader_resp.raise_for_status()
         grader_data = grader_resp.json()
 
-        def final_clamp(val: float) -> float:
-            return max(0.01, min(0.99, val))
-
-        score = final_clamp(grader_data.get("score", 0.01))
+        score = strict_unit_interval(grader_data.get("score", 0.01))
         success = score >= SUCCESS_SCORE_THRESHOLD
 
         result = {
@@ -278,8 +295,8 @@ def run_agent_single_task(
             "task_name": task_info["name"],
             "difficulty": task_info["difficulty"],
             "score": score,
-            "precision": final_clamp(grader_data.get("precision", 0.01)),
-            "recall": final_clamp(grader_data.get("recall", 0.01)),
+            "precision": strict_unit_interval(grader_data.get("precision", 0.01)),
+            "recall": strict_unit_interval(grader_data.get("recall", 0.01)),
         }
 
         logger.info(f"[{task_id}] Score: {result['score']:.4f} (P={result['precision']:.2f}, R={result['recall']:.2f})")
@@ -295,6 +312,12 @@ def run_agent_single_task(
             "recall": 0.01,
         }
     finally:
+        # Keep output parseable for strict validators even on exceptions.
+        if not rewards:
+            rewards = [strict_unit_interval(score)]
+        if steps_taken <= 0:
+            steps_taken = 1
+        score = strict_unit_interval(score)
         # Emit [END] log
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
@@ -318,7 +341,7 @@ def main():
 
     tasks_to_run = [args.task] if args.task else TASK_IDS
     results = {}
-    total_score = 0.01
+    total_score = 0.0
 
     for idx, task_id in enumerate(tasks_to_run):
         res = run_agent_single_task(args.env_url, task_id, client, args.seed)
