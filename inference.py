@@ -50,7 +50,8 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
-TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
+# Round-1 default: run the required 3 tasks (easy, medium, hard).
+TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation"]
 SEED = 42
 BENCHMARK = "financial_audit_env"
 TEMPERATURE = 0.1
