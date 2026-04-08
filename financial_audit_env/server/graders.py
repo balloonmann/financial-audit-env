@@ -26,21 +26,20 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 _SCORE_EPSILON = 0.01
 
 def _clamp_score(score: float) -> float:
-    """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
-    if score <= 0.0:
-        return _SCORE_EPSILON
-    elif score >= 1.0:
-        return 1.0 - _SCORE_EPSILON
+    """Clamp a score to be strictly within [0.01, 0.99]."""
+    if score <= 0.01:
+        return 0.01
+    elif score >= 0.99:
+        return 0.99
     return score
 
 def strict_round_clamp(raw_score: float, n_digits: int = 2) -> float:
-    """Safely round then clamp to guarantee the result is strictly in (0, 1)."""
-    epsilon = 10 ** (-n_digits)
+    """Safely round then clamp to guarantee the result is strictly in [0.01, 0.99]."""
     rounded = round(raw_score, n_digits)
-    if rounded <= 0.0:
-        return epsilon
-    elif rounded >= 1.0:
-        return 1.0 - epsilon
+    if rounded <= 0.01:
+        return 0.01
+    elif rounded >= 0.99:
+        return 0.99
     return rounded
 
 
