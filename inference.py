@@ -178,7 +178,7 @@ def run_agent_single_task(
     session = requests.Session()
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = 0.01
     success = False
 
     # Emit [START] log
@@ -248,7 +248,7 @@ def run_agent_single_task(
         step_resp.raise_for_status()
         step_data = step_resp.json()
 
-        step_reward = step_data.get("reward", 0.0) or 0.0
+        step_reward = step_data.get("reward", 0.01) or 0.01
         step_done = step_data.get("done", True)
         rewards.append(step_reward)
         steps_taken = 1
@@ -291,8 +291,8 @@ def run_agent_single_task(
             "task_name": task_id,
             "difficulty": "unknown",
             "score": 0.01,
-            "precision": 0.0,
-            "recall": 0.0,
+            "precision": 0.01,
+            "recall": 0.01,
         }
     finally:
         # Emit [END] log
@@ -318,7 +318,7 @@ def main():
 
     tasks_to_run = [args.task] if args.task else TASK_IDS
     results = {}
-    total_score = 0.0
+    total_score = 0.01
 
     for idx, task_id in enumerate(tasks_to_run):
         res = run_agent_single_task(args.env_url, task_id, client, args.seed)

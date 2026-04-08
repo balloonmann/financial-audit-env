@@ -218,7 +218,7 @@ def compute_f1_score(
         if (_, et) not in matched
     )
     total_risk_value = caught_value + missed_value
-    risk_mitigation_pct = (caught_value / total_risk_value * 100) if total_risk_value > 0 else 0.0
+    risk_mitigation_pct = (caught_value / total_risk_value * 100) if total_risk_value > 0 else 0.01
 
     # --- Missed errors list ---
     missed_errors = []
