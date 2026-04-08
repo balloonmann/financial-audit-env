@@ -23,7 +23,7 @@ from .data_generator import ERROR_MONETARY_VALUES, ERROR_SEVERITY_WEIGHTS
 # Phase-2 validator requires every task score to be strictly in (0, 1).
 # We enforce: final_score = clamp(round(raw_score, N))
 # ---------------------------------------------------------------------------
-_SCORE_EPSILON = 0.0001
+_SCORE_EPSILON = 0.01
 
 def _clamp_score(score: float) -> float:
     """Clamp a score to be strictly within (0, 1) — never 0.0 or 1.0."""
@@ -33,7 +33,7 @@ def _clamp_score(score: float) -> float:
         return 1.0 - _SCORE_EPSILON
     return score
 
-def strict_round_clamp(raw_score: float, n_digits: int = 4) -> float:
+def strict_round_clamp(raw_score: float, n_digits: int = 2) -> float:
     """Safely round then clamp to guarantee the result is strictly in (0, 1)."""
     epsilon = 10 ** (-n_digits)
     rounded = round(raw_score, n_digits)
@@ -236,16 +236,16 @@ def compute_f1_score(
 
     return {
         # All numeric scores clamped to (0, 1) exclusive — Phase-2 validator requirement
-        "score": strict_round_clamp(f1, 4),
-        "precision": strict_round_clamp(precision, 4),
-        "recall": strict_round_clamp(recall, 4),
-        "weighted_score": strict_round_clamp(weighted_f1, 4),
-        "partial_credit_score": strict_round_clamp(partial_credit_f1, 4),
+        "score": strict_round_clamp(f1, 2),
+        "precision": strict_round_clamp(precision, 2),
+        "recall": strict_round_clamp(recall, 2),
+        "weighted_score": strict_round_clamp(weighted_f1, 2),
+        "partial_credit_score": strict_round_clamp(partial_credit_f1, 2),
         # Counts
         "true_positives": true_positives,
         "false_positives": len(false_positive_list),
         "false_negatives": false_negatives,
-        "weighted_false_negatives": round(weighted_total - weighted_tp, 4),
+        "weighted_false_negatives": round(weighted_total - weighted_tp, 2),
         "duplicates": len(duplicates_list),
         "partial_matches": len(partial_matches),
         "total_findings": total_findings,
@@ -436,4 +436,4 @@ def compute_step_reward(
         if result["recall"] < 0.3:
             reward -= 0.20
 
-    return strict_round_clamp(reward, 4)
+    return strict_round_clamp(reward, 2)
