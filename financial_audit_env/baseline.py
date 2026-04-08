@@ -389,11 +389,11 @@ def run_baseline_all_tasks(
         total_score += result["score"]
 
     avg_score = total_score / len(TASK_IDS)
-    clamped_avg = 0.01 if avg_score <= 0.0 else (0.99 if avg_score >= 1.0 else avg_score)
+    clamped_avg = 0.01 if avg_score <= 0.01 else (0.99 if avg_score >= 0.99 else avg_score)
 
     return {
         "tasks": results,
-        "average_score": round(clamped_avg, 4),
+        "average_score": round(clamped_avg, 2),
         "model": MODEL,
         "seed": seed,
     }

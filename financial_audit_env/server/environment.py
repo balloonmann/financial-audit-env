@@ -144,7 +144,7 @@ class FinancialAuditEnvironment(Environment):
             summary = self._build_data_summary()
             return AuditObservation(
                 done=False,
-                reward=0.0,
+                reward=0.01,
                 task_id=task_id,
                 task_description=task["description"],
                 documents={},  # No documents yet — must investigate first
@@ -167,7 +167,7 @@ class FinancialAuditEnvironment(Environment):
             # Standard mode: full documents immediately
             return AuditObservation(
                 done=False,
-                reward=0.0,
+                reward=0.01,
                 task_id=task_id,
                 task_description=task["description"],
                 documents=self._documents,
@@ -341,7 +341,7 @@ class FinancialAuditEnvironment(Environment):
 
         return AuditObservation(
             done=False,
-            reward=-0.02,  # Small cost for investigation step
+            reward=0.01,  # Clamped cost for investigation step
             task_id=self._task["id"] if self._task else "",
             task_description=self._task["description"] if self._task else "",
             documents=revealed_docs,
@@ -399,23 +399,23 @@ class FinancialAuditEnvironment(Environment):
             return {"noise_level": 0.3, "suggestion": "default"}
 
         avg_score = sum(self._score_history[-5:]) / len(self._score_history[-5:])
-        clamped_avg = 0.01 if avg_score <= 0.0 else (0.99 if avg_score >= 1.0 else avg_score)
+        clamped_avg = 0.01 if avg_score <= 0.01 else (0.99 if avg_score >= 0.99 else avg_score)
 
         if avg_score >= 0.8:
             return {
                 "noise_level": 0.7,
                 "suggestion": "increase_difficulty",
-                "avg_recent_score": round(clamped_avg, 4),
+                "avg_recent_score": round(clamped_avg, 2),
             }
         elif avg_score >= 0.5:
             return {
                 "noise_level": 0.5,
                 "suggestion": "maintain",
-                "avg_recent_score": round(clamped_avg, 4),
+                "avg_recent_score": round(clamped_avg, 2),
             }
         else:
             return {
                 "noise_level": 0.2,
                 "suggestion": "decrease_difficulty",
-                "avg_recent_score": round(clamped_avg, 4),
+                "avg_recent_score": round(clamped_avg, 2),
             }
