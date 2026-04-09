@@ -17,7 +17,7 @@ print(f"GET /health → {r.status_code} {r.json()}")
 r = requests.get(f"{BASE}/tasks")
 assert r.status_code == 200
 data = r.json()
-assert data["total_tasks"] == 3
+assert data["total_tasks"] == 4
 print(f"GET /tasks → {r.status_code}, {data['total_tasks']} tasks")
 for t in data["tasks"]:
     print(f"  - {t['id']}: {t['name']} ({t['difficulty']})")
@@ -56,8 +56,8 @@ assert r.status_code == 200
 grader = r.json()
 print(f"GET /grader → score={grader['score']}, P={grader['precision']}, R={grader['recall']}")
 
-# 6. Test all 3 tasks work
-for task_id in ["expense_audit", "invoice_match", "gst_reconciliation"]:
+# 6. Test all 4 tasks work
+for task_id in ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]:
     r = requests.post(f"{BASE}/reset", json={"task_id": task_id, "seed": 42})
     assert r.status_code == 200
     print(f"POST /reset({task_id}) → {r.status_code} ✓")
