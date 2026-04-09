@@ -21,9 +21,11 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -49,6 +51,9 @@ TASK_IDS = ["expense_audit", "invoice_match", "gst_reconciliation"]
 
 # Seed for reproducibility
 SEED = 42
+
+# Optional directory for raw model outputs (useful for debugging parser issues).
+BASELINE_DEBUG_DIR = os.environ.get("BASELINE_DEBUG_DIR", "")
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,49 @@ def build_task_prompt(task_description: str, documents: Dict[str, Any], error_ty
     ])
 
     return "\n".join(prompt_parts)
+
+
+def build_compact_task_prompt(task_description: str, documents: Dict[str, Any], error_types: List[str]) -> str:
+    """Build a compact prompt variant for context-limited providers."""
+    return (
+        "You are an expert financial auditor. Return ONLY a JSON array of findings.\n"
+        "Each finding keys: document_id, error_type, description, suggested_fix.\n"
+        f"Task: {task_description}\n"
+        f"Allowed error types: {json.dumps(error_types, separators=(',', ':'), sort_keys=True)}\n"
+        f"Documents: {json.dumps(documents, separators=(',', ':'), sort_keys=True)}"
+    )
+
+
+def _compact_documents(documents: Dict[str, Any], ratio: float = 0.65, min_items: int = 8) -> Dict[str, Any]:
+    """Reduce list-heavy document payloads to fit strict context windows."""
+    reduced: Dict[str, Any] = {}
+    for key, value in documents.items():
+        if isinstance(value, list):
+            keep = max(min_items, int(len(value) * ratio))
+            reduced[key] = value[:keep]
+        elif isinstance(value, dict):
+            nested: Dict[str, Any] = {}
+            for sub_key, sub_value in value.items():
+                if isinstance(sub_value, list):
+                    keep = max(min_items, int(len(sub_value) * ratio))
+                    nested[sub_key] = sub_value[:keep]
+                else:
+                    nested[sub_key] = sub_value
+            reduced[key] = nested
+        else:
+            reduced[key] = value
+    return reduced
+
+
+def _save_raw_response(task_id: str, response_text: str, attempt: int) -> None:
+    """Persist raw model output for post-mortem debugging when enabled."""
+    if not BASELINE_DEBUG_DIR:
+        return
+    debug_dir = Path(BASELINE_DEBUG_DIR)
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    safe_task = re.sub(r"[^a-zA-Z0-9_-]", "_", task_id)
+    out_file = debug_dir / f"{safe_task}_attempt_{attempt}.txt"
+    out_file.write_text(response_text, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -209,33 +257,89 @@ def parse_llm_findings(response_text: str) -> List[Dict[str, str]]:
     """
     text = response_text.strip()
 
-    # Strip markdown code blocks if present
+    # Handle fenced code blocks while preserving only the first fenced payload.
     if text.startswith("```"):
-        # Remove opening ``` (possibly with language tag)
-        lines = text.split("\n")
-        start = 1  # Skip first line (```)
-        end = len(lines)
-        for i in range(len(lines) - 1, 0, -1):
-            if lines[i].strip() == "```":
-                end = i
-                break
-        text = "\n".join(lines[start:end])
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL)
+        if match:
+            text = match.group(1).strip()
 
-    # Try to find JSON array in the text
-    # Look for the first [ and last ]
+    # Primary path: parse the broadest JSON array found in the output.
     start_idx = text.find("[")
     end_idx = text.rfind("]")
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        text = text[start_idx:end_idx + 1]
+        chunk = text[start_idx:end_idx + 1]
+        try:
+            parsed = json.loads(chunk)
+            if isinstance(parsed, list):
+                return [f for f in parsed if isinstance(f, dict)]
+        except json.JSONDecodeError:
+            pass
 
-    try:
-        findings = json.loads(text)
-        if isinstance(findings, list):
-            return findings
-    except json.JSONDecodeError:
-        logger.warning(f"Failed to parse LLM response as JSON: {text[:200]}...")
+    # Fallback path: recover individual object literals when the array is malformed.
+    recovered: List[Dict[str, str]] = []
+    for obj in re.findall(r"\{[^{}]*\}", text, flags=re.DOTALL):
+        if '"document_id"' not in obj or '"error_type"' not in obj:
+            continue
+        try:
+            value = json.loads(obj.replace("\r", " ").replace("\n", " "))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            recovered.append(value)
 
-    return []
+    if recovered:
+        logger.info("Recovered %d findings from malformed JSON output", len(recovered))
+    else:
+        logger.warning("Failed to parse LLM response as findings JSON")
+    return recovered
+
+
+def _generate_findings_with_fallback(
+    task_id: str,
+    task_description: str,
+    documents: Dict[str, Any],
+    error_types: List[str],
+    hf_token: str,
+    max_attempts: int = 4,
+) -> Tuple[List[Dict[str, str]], int, int]:
+    """
+    Generate findings with adaptive prompt fallback for context-constrained providers.
+
+    Returns:
+        findings, final_prompt_length, attempts_used
+    """
+    docs_variant = documents
+    last_prompt_len = 0
+
+    for attempt in range(1, max_attempts + 1):
+        if attempt == 1:
+            prompt = build_task_prompt(task_description, docs_variant, error_types)
+        else:
+            prompt = build_compact_task_prompt(task_description, docs_variant, error_types)
+        last_prompt_len = len(prompt)
+
+        try:
+            response_text = call_llama(prompt, hf_token=hf_token)
+            _save_raw_response(task_id, response_text, attempt)
+            findings = parse_llm_findings(response_text)
+            if findings:
+                return findings, last_prompt_len, attempt
+
+            # Empty parse: shrink payload and retry with compact prompt.
+            if attempt < max_attempts:
+                docs_variant = _compact_documents(docs_variant)
+                continue
+            return [], last_prompt_len, attempt
+        except Exception as exc:
+            message = str(exc).lower()
+            context_error = "context_length_exceeded" in message or "reduce the length" in message
+            if context_error and attempt < max_attempts:
+                logger.warning("[%s] Context limit reached, retrying with compact prompt", task_id)
+                docs_variant = _compact_documents(docs_variant)
+                continue
+            raise
+
+    return [], last_prompt_len, max_attempts
 
 
 # ---------------------------------------------------------------------------
@@ -291,18 +395,21 @@ def run_baseline_single_task(
     task_info = next(t for t in tasks_data["tasks"] if t["id"] == task_id)
     error_types = task_info["error_types"]
 
-    prompt = build_task_prompt(task_desc, documents, error_types)
-    logger.info(f"[{task_id}] Prompt length: {len(prompt)} chars")
-
-    # Step 3: Call Llama
+    # Step 3: Call Llama + parse findings with context fallback
     logger.info(f"[{task_id}] Calling {MODEL}...")
     start_time = time.time()
-    response_text = call_llama(prompt, hf_token=hf_token)
+    findings, prompt_length, attempts_used = _generate_findings_with_fallback(
+        task_id=task_id,
+        task_description=task_desc,
+        documents=documents,
+        error_types=error_types,
+        hf_token=hf_token,
+    )
     elapsed = time.time() - start_time
+    logger.info(f"[{task_id}] Prompt length: {prompt_length} chars (attempt {attempts_used})")
     logger.info(f"[{task_id}] LLM responded in {elapsed:.1f}s")
 
-    # Step 4: Parse findings
-    findings = parse_llm_findings(response_text)
+    # Step 4: Parsed findings
     logger.info(f"[{task_id}] Parsed {len(findings)} findings from LLM")
 
     # Step 5: Submit findings
@@ -343,6 +450,8 @@ def run_baseline_single_task(
         "total_errors": grader_data.get("total_errors", 0),
         "findings_submitted": len(findings),
         "inference_time_s": round(elapsed, 2),
+        "prompt_length": prompt_length,
+        "llm_attempts": attempts_used,
         "model": MODEL,
     }
 
@@ -407,15 +516,16 @@ def _run_baseline_local(env: Any, task_id: str, hf_token: str, seed: int) -> Dic
     task = get_task(task_id)
     obs = env.reset(task_id=task_id, seed=seed)
 
-    prompt = build_task_prompt(
-        obs.task_description, obs.documents, task["error_types"]
-    )
-
     start_time = time.time()
-    response_text = call_llama(prompt, hf_token=hf_token)
+    raw_findings, prompt_length, attempts_used = _generate_findings_with_fallback(
+        task_id=task_id,
+        task_description=obs.task_description,
+        documents=obs.documents,
+        error_types=task["error_types"],
+        hf_token=hf_token,
+    )
     elapsed = time.time() - start_time
 
-    raw_findings = parse_llm_findings(response_text)
     findings = [
         Finding(
             document_id=f.get("document_id", "UNKNOWN"),
@@ -443,6 +553,8 @@ def _run_baseline_local(env: Any, task_id: str, hf_token: str, seed: int) -> Dic
         "total_errors": grader.get("total_errors", 0),
         "findings_submitted": len(findings),
         "inference_time_s": round(elapsed, 2),
+        "prompt_length": prompt_length,
+        "llm_attempts": attempts_used,
         "model": MODEL,
     }
 
