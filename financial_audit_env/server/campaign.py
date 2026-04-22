@@ -13,7 +13,11 @@ from ..models import (
 )
 from .environment import FinancialAuditEnvironment
 from .instructions import get_active_instructions, get_pending_regulatory_shocks
-from .regulatory import format_shock_notification, get_shock_for_period_step
+from .regulatory import (
+    apply_shock_to_ground_truth,
+    format_shock_notification,
+    get_shock_for_period_step,
+)
 
 logger = logging.getLogger("financial_audit_env.campaign")
 
@@ -88,6 +92,19 @@ class CampaignController:
         self._validate_campaign_started()
         self._validate_dependency(role)
 
+        # If a regulatory shock is due on this exact step, force at least one
+        # post-shock action before finalization so agents can adapt.
+        predicted_step = self._env.state.step_count + 1
+        pending_shock = get_shock_for_period_step(
+            period=self._state.current_period,
+            step=predicted_step,
+            delivered=self._delivered_shock_ids,
+        )
+        final_overridden = False
+        if pending_shock is not None and action.submit_final:
+            action = action.model_copy(update={"submit_final": False})
+            final_overridden = True
+
         # Budget tracking
         self._state.budget_remaining = max(0, self._state.budget_remaining - STEP_COST)
 
@@ -136,8 +153,26 @@ class CampaignController:
                 }
             )
             self._state.world_state.mid_period_rule_drops.append(shock)
+
+            # Extend active ground truth so post-shock findings can be graded against new rules.
+            current_gt = list(getattr(self._env, "_ground_truth", []))
+            current_docs = dict(getattr(self._env, "_documents", {}))
+            updated_gt = apply_shock_to_ground_truth(current_gt, current_docs, shock)
+            self._env._ground_truth = updated_gt
+
+            # Mark delivered; compliance should only be updated by evaluator logic,
+            # not at delivery time.
+            self._state.instruction_compliance[shock["id"]] = False
+
             obs.feedback = f"{obs.feedback}\n\n{format_shock_notification(shock)}"
             delivered = True
+
+        if final_overridden:
+            obs.feedback = (
+                f"{obs.feedback}\n\n"
+                "Final submission was deferred because a new regulatory rule dropped. "
+                "Submit one more post-shock action for grading."
+            )
 
         return self._build_campaign_observation(obs)
 

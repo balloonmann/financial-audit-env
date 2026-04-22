@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from ..models import AgentRole, AuditAction, AuditObservation, OverseerAction
 from .campaign import CampaignController
 from .environment import FinancialAuditEnvironment
+from .instructions import get_active_instructions
 from .security import setup_security
 from .self_improve import SelfImproveEngine
 from .tasks import TASKS, get_all_tasks_summary
@@ -458,10 +459,21 @@ async def campaign_task_start(request: CampaignTaskStartRequest):
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Compatibility payload for orchestration clients that expect explicit context fields.
+    findings_history = [
+        f for f in controller.state.findings_history
+        if int(f.get("period", 0)) < int(controller.state.current_period)
+    ]
+    active_instructions = get_active_instructions(controller.state.current_period)
+
     return {
         "status": "started",
         "campaign_id": request.campaign_id,
         "observation": obs.model_dump(),
+        "world_state": controller.state.world_state.model_dump(),
+        "findings_history": findings_history,
+        "active_instructions": active_instructions,
+        "pending_regulatory_shocks": controller.state.world_state.mid_period_rule_drops,
     }
 
 

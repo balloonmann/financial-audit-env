@@ -31,11 +31,29 @@ class SelfImproveEngine:
     ) -> Dict[str, Any]:
         self._validate_seed_split(train_seeds, held_out_seeds)
 
-        baseline = self._pseudo_benchmark(campaign_controller, held_out_seeds, mode="baseline")
-        candidate = self._pseudo_benchmark(campaign_controller, held_out_seeds, mode="candidate")
+        train_baseline = self._pseudo_benchmark(campaign_controller, train_seeds, mode="baseline")
+        train_candidate = self._pseudo_benchmark(campaign_controller, train_seeds, mode="candidate")
+        learned_delta = train_candidate["mean_score"] - train_baseline["mean_score"]
 
-        accepted = candidate["mean_score"] >= baseline["mean_score"] and not candidate["safety_regression"]
-        delta = round(candidate["mean_score"] - baseline["mean_score"], 4)
+        baseline = self._pseudo_benchmark(campaign_controller, held_out_seeds, mode="baseline")
+        candidate = self._pseudo_benchmark(
+            campaign_controller,
+            held_out_seeds,
+            mode="candidate",
+            learned_delta=learned_delta,
+        )
+
+        candidate["safety_regression"] = any(
+            (cand + 0.02) < base
+            for cand, base in zip(candidate["scores"], baseline["scores"])
+        )
+
+        transfer_delta = round(candidate["mean_score"] - baseline["mean_score"], 4)
+        accepted = (
+            learned_delta > 0.005
+            and transfer_delta > -0.002
+            and not candidate["safety_regression"]
+        )
 
         h = self._history.setdefault(campaign_id, SelfImproveHistory())
         record = {
@@ -45,7 +63,9 @@ class SelfImproveEngine:
             "baseline": baseline,
             "candidate": candidate,
             "accepted": accepted,
-            "delta": delta,
+            "delta": transfer_delta,
+            "train_delta": round(learned_delta, 4),
+            "transfer_delta": transfer_delta,
         }
         h.iterations.append(record)
         return record
@@ -65,6 +85,7 @@ class SelfImproveEngine:
         campaign_controller: CampaignController,
         seeds: List[int],
         mode: str,
+        learned_delta: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Deterministic placeholder benchmark.
@@ -76,9 +97,12 @@ class SelfImproveEngine:
         campaign_period = campaign_controller.state.current_period if campaign_controller.state.campaign_id else 1
 
         scores = []
+        structural = ((sum(seeds) % 7) - 3) / 1000.0
+        transfer = (learned_delta * 0.6) if mode == "candidate" else 0.0
+        candidate_adj = transfer + structural if mode == "candidate" else 0.0
         for s in seeds:
             base = ((s % 13) / 100.0) + 0.45 + (campaign_period * 0.002)
-            adj = 0.01 if mode == "candidate" else 0.0
+            adj = candidate_adj
             scores.append(min(0.99, max(0.01, round(base + adj, 4))))
 
         mean_score = round(mean(scores), 4)

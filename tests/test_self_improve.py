@@ -87,8 +87,8 @@ def test_self_improve_empty_seeds_rejected():
         )
 
 
-def test_self_improve_candidate_beats_baseline():
-    """The pseudo benchmark is designed so candidate always slightly beats baseline."""
+def test_self_improve_acceptance_gate_consistency():
+    """Acceptance should match transfer-aware gating, not forced optimism."""
     controller = CampaignController(total_periods=3)
     obs = controller.start_campaign(seed=42)
     engine = SelfImproveEngine()
@@ -100,10 +100,18 @@ def test_self_improve_candidate_beats_baseline():
         campaign_controller=controller,
     )
 
-    # Candidate should have higher mean_score than baseline (by design)
-    assert out["candidate"]["mean_score"] >= out["baseline"]["mean_score"]
-    assert out["delta"] >= 0
-    assert out["accepted"] is True
+    baseline = out["baseline"]["mean_score"]
+    candidate = out["candidate"]["mean_score"]
+    train_delta = out["delta"]
+    transfer_delta = out["transfer_delta"]
+
+    # Gate: candidate must clear train and transfer thresholds.
+    expected_accepted = train_delta > 0.005 and transfer_delta > -0.002
+    assert out["accepted"] is expected_accepted
+
+    # Metrics should remain bounded and coherent.
+    assert 0.0 <= baseline <= 1.0
+    assert 0.0 <= candidate <= 1.0
 
 
 def test_self_improve_history_for_unknown_campaign():

@@ -16,6 +16,14 @@ import os
 import sys
 from typing import Any, Dict, List
 
+# Support both invocation styles:
+# 1) python training/train_grpo.py
+# 2) python -m training.train_grpo
+if __package__ is None or __package__ == "":
+    _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _ROOT not in sys.path:
+        sys.path.insert(0, _ROOT)
+
 # ---------------------------------------------------------------------------
 # Colab setup — uncomment these in Colab
 # ---------------------------------------------------------------------------
@@ -35,26 +43,43 @@ TASKS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detectio
 
 def setup_model():
     """Load model with Unsloth for memory efficiency on free T4."""
-    try:
-        from unsloth import FastLanguageModel
-    except ImportError:
-        print("Unsloth not installed. Install with: pip install unsloth")
-        print("Falling back to dry-run mode for verification.")
+    force_dry_run = os.getenv("FORCE_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
+    if force_dry_run:
+        print("FORCE_DRY_RUN is enabled. Skipping Unsloth model load.")
         return None, None
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
-        max_seq_length=MAX_SEQ_LENGTH,
-        load_in_4bit=True,
-    )
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=LORA_R,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        lora_alpha=LORA_ALPHA,
-        lora_dropout=0,
-    )
-    return model, tokenizer
+    try:
+        from unsloth import FastLanguageModel
+    except Exception as exc:
+        print("Unsloth unavailable in this environment. Falling back to dry-run mode.")
+        print(f"Reason: {exc}")
+        print("For full training, run on a CUDA GPU environment (for example Colab T4).")
+        return None, None
+
+    try:
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=MODEL_NAME,
+            max_seq_length=MAX_SEQ_LENGTH,
+            load_in_4bit=True,
+        )
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=LORA_R,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            lora_alpha=LORA_ALPHA,
+            lora_dropout=0,
+        )
+        return model, tokenizer
+    except Exception as exc:
+        print("Unsloth model setup failed. Falling back to dry-run mode for verification.")
+        print(f"Reason: {exc}")
+        print("For full training, run this script in Colab with GPU runtime.")
+        return None, None
+
+    # Unreachable; kept only for readability in static analysis tools.
+    if False:  # pragma: no cover
+        print("Falling back to dry-run mode for verification.")
+        return None, None
 
 
 def create_dataset():

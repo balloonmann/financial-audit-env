@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from .data_generator import REFERENCE_DATE
 from .instructions import REGULATORY_SHOCKS
 
 
@@ -51,7 +52,7 @@ def apply_shock_to_ground_truth(
 
     if "new_vendor_risk_months" in rule_change:
         months = int(rule_change["new_vendor_risk_months"])
-        cutoff = datetime.now() - timedelta(days=months * 30)
+        cutoff = REFERENCE_DATE - timedelta(days=months * 30)
         for vendor in documents.get("vendor_registry", []):
             incorp = vendor.get("incorporation_date", "")
             try:

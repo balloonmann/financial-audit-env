@@ -15,6 +15,15 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **100+ tests passing** · **Theme: Multi-Agent Interactions × Scalable Oversight**
 
+Core strategy docs:
+- [Hackathon Core Idea](HACKATHON_CORE_IDEA.md)
+- [Testing and Training Execution Plan](HACKATHON_TESTING_TRAINING_PLAN.md)
+- [Training Quickstart](TRAINING_QUICKSTART.md)
+
+Automation:
+- Demo runner artifact script: [scripts/run_hackathon_demo.py](scripts/run_hackathon_demo.py)
+- CI quality gate: [.github/workflows/ci.yml](.github/workflows/ci.yml)
+
 ---
 
 ## Round 2 Architecture
@@ -244,6 +253,20 @@ The campaign flow:
 4. Submits overseer review after specialists complete
 5. Advances period (world mutation)
 6. Logs with `[START]/[STEP]/[END]` format
+
+### Automated Hackathon Demo (No-LLM Path)
+
+Use a deterministic no-LLM flow to generate a reproducible demo artifact:
+
+```bash
+python scripts/run_hackathon_demo.py --env-url http://localhost:8000 --seed 42 --periods 5 --output artifacts/hackathon_demo_summary.json
+```
+
+If protected endpoints are enabled, include API key:
+
+```bash
+python scripts/run_hackathon_demo.py --env-url http://localhost:8000 --api-key "$ADMIN_API_KEY"
+```
 
 ---
 

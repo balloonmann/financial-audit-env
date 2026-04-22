@@ -89,6 +89,9 @@ class InMemoryRateLimiter:
 # Global rate limiter instance
 rate_limiter = InMemoryRateLimiter(max_requests=30, window_seconds=60)
 
+# Tighter limiter for mutation endpoints to reduce bot abuse blast radius.
+write_rate_limiter = InMemoryRateLimiter(max_requests=12, window_seconds=60)
+
 
 # ---------------------------------------------------------------------------
 # Security middleware setup
@@ -102,6 +105,50 @@ CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 
 # Optional API key for expensive endpoints
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+
+# Trust proxy headers only when explicitly enabled; avoids spoofed X-Forwarded-For by default.
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+WRITE_PATH_PREFIXES = (
+    "/reset",
+    "/step",
+    "/baseline",
+    "/campaign",
+    "/overseer",
+    "/self-improve",
+    "/leaderboard",
+)
+
+LOCAL_TRUSTED_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+PROTECTED_ENDPOINTS = {
+    "/baseline",
+    "/campaign/start",
+    "/campaign/task/start",
+    "/campaign/task/submit",
+    "/campaign/period",
+    "/campaign/period/advance",
+    "/overseer/review",
+    "/self-improve",
+}
+
+
+def _extract_client_ip(request: Request) -> str:
+    """Resolve client IP with optional trusted-proxy support."""
+    if TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for", "").strip()
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip
+    return request.client.host if request.client else "unknown"
 
 
 def setup_security(app: FastAPI) -> None:
@@ -131,7 +178,7 @@ def setup_security(app: FastAPI) -> None:
     @app.middleware("http")
     async def security_middleware(request: Request, call_next: Callable) -> Response:
         """Combined security middleware."""
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _extract_client_ip(request)
 
         # Generate request ID for tracking
         request_id = str(uuid.uuid4())[:8]
@@ -144,6 +191,16 @@ def setup_security(app: FastAPI) -> None:
                 content={"detail": "Too many requests. Please try again later."},
                 headers={"X-Request-ID": request_id},
             )
+
+        # Extra throttling for write-heavy paths to mitigate automated abuse.
+        if request.url.path.startswith(WRITE_PATH_PREFIXES) and client_ip not in LOCAL_TRUSTED_CLIENTS:
+            if write_rate_limiter.is_rate_limited(f"write:{client_ip}"):
+                logger.warning(f"[{request_id}] Write-path throttled: {client_ip} {request.url.path}")
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Write request rate exceeded. Retry later."},
+                    headers={"X-Request-ID": request_id},
+                )
 
         # Request body size limit — stream-based check (not trusting header)
         if request.method in ("POST", "PUT", "PATCH"):
@@ -159,8 +216,27 @@ def setup_security(app: FastAPI) -> None:
                 except ValueError:
                     pass  # Invalid content-length header, let it through
 
+            # Require JSON content-type for mutating API routes.
+            if request.url.path.startswith(WRITE_PATH_PREFIXES):
+                content_type = request.headers.get("content-type", "").lower()
+                if "application/json" not in content_type:
+                    return JSONResponse(
+                        status_code=415,
+                        content={"detail": "Content-Type application/json is required."},
+                        headers={"X-Request-ID": request_id},
+                    )
+
+            # Basic bot-abuse signal check.
+            user_agent = request.headers.get("user-agent", "")
+            if request.url.path.startswith(WRITE_PATH_PREFIXES) and not user_agent.strip():
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "User-Agent header is required."},
+                    headers={"X-Request-ID": request_id},
+                )
+
         # Auth check for expensive endpoints
-        if ADMIN_API_KEY and request.url.path in ("/baseline",):
+        if ADMIN_API_KEY and request.url.path in PROTECTED_ENDPOINTS:
             api_key = request.headers.get("X-API-Key", "")
             if api_key != ADMIN_API_KEY:
                 return JSONResponse(
