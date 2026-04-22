@@ -20,3 +20,20 @@ __pycache__/
 # Type Checkers and Testing
 .pyre/
 .pytest_cache/
+
+# Round 2 Planning Docs (keep locally, not in repo)
+ROUND2_BLUEPRINT.md
+ROUND2_BLUEPRINT_REVIEW_ARTIFACT.md
+ROUND2_FINAL_CONSENSUS_ARTIFACT.md
+ROUND2_IMPLEMENTATION_PLAN.md
+ROUND2_POTENTIAL_OPTIONS.md
+ROUND2_REVIEW_RESPONSE.md
+FINANCE_EXPERT_BRIEF.md
+
+# Verification scripts (local only)
+verify_r2_score.py
+verify_full.py
+verify_round2.py
+verify_training.py
+diff.txt
+diff_utf8.txt

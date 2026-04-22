@@ -1169,6 +1169,51 @@ def generate_fraud_data(seed: int = 42) -> Tuple[Dict[str, Any], List[Dict[str, 
 
 
 # ---------------------------------------------------------------------------
+# Schema drift and regulatory shock helpers (Round 2 campaign support)
+# ---------------------------------------------------------------------------
+
+def apply_schema_drift(documents, schema_changes):
+    """Apply field renames for schema drift simulation.
+
+    Used by campaign controller in period 3+ to rename fields
+    (e.g., 'vendor_gstin' → 'supplier_gstin' in purchase register).
+    """
+    def _rename(data, old, new):
+        if isinstance(data, dict):
+            return {(new if k == old else k): _rename(v, old, new) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [_rename(item, old, new) for item in data]
+        return data
+    result = documents
+    for old, new in schema_changes.items():
+        result = _rename(result, old, new)
+    return result
+
+
+def apply_regulatory_shock(documents, ground_truth, shock):
+    """Apply a regulatory shock — modify data/ground_truth to reflect new rule.
+
+    Called when a mid-period regulatory change occurs. Adjusts financial data
+    and extends ground truth with new violations created by the rule change.
+    """
+    rule_change = shock.get("rule_change", {})
+    if "tax_rate" in rule_change:
+        # Recalculate taxes for affected HSN codes
+        for hsn, new_rate in rule_change["tax_rate"].items():
+            if "purchase_register" in documents:
+                for entry in documents["purchase_register"]:
+                    if entry.get("hsn_code") == hsn:
+                        taxable = entry.get("taxable_value", 0)
+                        if entry.get("igst", 0) > 0:
+                            entry["igst"] = round(taxable * new_rate, 2)
+                        else:
+                            entry["cgst"] = round(taxable * new_rate / 2, 2)
+                            entry["sgst"] = round(taxable * new_rate / 2, 2)
+                        entry["total"] = taxable + entry.get("cgst", 0) + entry.get("sgst", 0) + entry.get("igst", 0)
+    return documents, ground_truth
+
+
+# ---------------------------------------------------------------------------
 # Generator dispatcher
 # ---------------------------------------------------------------------------
 

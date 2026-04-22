@@ -8,6 +8,15 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset the rate limiter before each test to prevent cross-test interference."""
+    from financial_audit_env.server.security import rate_limiter
+    rate_limiter._requests.clear()
+    yield
+    rate_limiter._requests.clear()
+
+
 @pytest.fixture
 def env():
     """Create a fresh environment instance for each test."""

@@ -10,6 +10,7 @@
 #
 # All models use Pydantic strict mode for input validation (OWASP best practice).
 
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -43,6 +44,16 @@ except ImportError:
 MAX_STRING_LENGTH = 500
 MAX_DOCUMENT_ID_LENGTH = 100
 MAX_FINDINGS_PER_STEP = 50
+
+
+class AgentRole(str, Enum):
+    """Roles in the multi-agent audit team."""
+
+    EXPENSE_SPECIALIST = "expense_specialist"
+    INVOICE_SPECIALIST = "invoice_specialist"
+    GST_SPECIALIST = "gst_specialist"
+    FRAUD_SPECIALIST = "fraud_specialist"
+    OVERSEER = "overseer"
 
 
 def _sanitize_string(value: str, max_length: int = MAX_STRING_LENGTH) -> str:
@@ -111,6 +122,22 @@ class Finding(BaseModel):
         default=None,
         description="Severity weight (auto-populated by grader, 0.0-2.0)",
     )
+    confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Agent's confidence in this finding (0.0-1.0). Used for calibration scoring.",
+    )
+    evidence_refs: List[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Evidence references, e.g. ['EXP-010.amount=4500', 'policy.meals.limit=1500']",
+    )
+    rationale: Optional[str] = Field(
+        default=None,
+        max_length=MAX_STRING_LENGTH,
+        description="Reasoning behind this finding",
+    )
 
     @field_validator("document_id", "error_type", mode="before")
     @classmethod
@@ -125,6 +152,22 @@ class Finding(BaseModel):
         if v is None:
             return None
         return _sanitize_string(v, MAX_STRING_LENGTH)
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def sanitize_rationale(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize rationale text."""
+        if v is None:
+            return None
+        return _sanitize_string(v, MAX_STRING_LENGTH)
+
+    @field_validator("evidence_refs", mode="before")
+    @classmethod
+    def sanitize_evidence_refs(cls, v: Any) -> Any:
+        """Sanitize and bound evidence refs list values."""
+        if not isinstance(v, list):
+            return v
+        return [_sanitize_string(str(item), MAX_DOCUMENT_ID_LENGTH) for item in v]
 
 
 # ---------------------------------------------------------------------------
@@ -224,3 +267,116 @@ class AuditState(State):
     investigation_mode: bool = False
     revealed_categories: List[str] = Field(default_factory=list)
     cumulative_score: float = 0.01
+
+
+class WorldState(BaseModel):
+    """Evolving state of the financial world across campaign periods."""
+
+    fiscal_period: int = 1
+    policy_version: int = 1
+    tax_rates: Dict[str, float] = Field(
+        default_factory=lambda: {
+            "gst_standard": 0.18,
+            "gst_reduced": 0.12,
+            "gst_low": 0.05,
+        }
+    )
+    schema_version: int = 1
+    schema_changes: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Field renames: {'old_name': 'new_name'}",
+    )
+    vendor_status_changes: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Vendor compliance changes: {'V-001': 'blacklisted'}",
+    )
+    policy_updates: List[str] = Field(
+        default_factory=list,
+        description="Policy change descriptions active this period",
+    )
+    active_alerts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Unresolved alerts from prior periods",
+    )
+    mid_period_rule_drops: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="NEW rules injected mid-period (regulatory shock)",
+    )
+
+
+class CampaignState(BaseModel):
+    """State of a multi-period audit campaign."""
+
+    campaign_id: str = ""
+    seed: int = 42
+    total_periods: int = 5
+    current_period: int = 1
+    world_state: WorldState = Field(default_factory=WorldState)
+    agent_roles: Dict[str, AgentRole] = Field(default_factory=dict)
+    period_scores: List[Dict[str, Any]] = Field(default_factory=list)
+    findings_history: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="All findings from all prior periods",
+    )
+    instruction_compliance: Dict[str, bool] = Field(default_factory=dict)
+    budget_remaining: float = Field(default=100.0)
+    specialist_consecutive_tasks: Dict[str, int] = Field(default_factory=dict)
+    regulatory_shocks_applied: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Track which regulatory shocks have been applied and when",
+    )
+
+
+class OverseerDecision(BaseModel):
+    """Single overseer decision on a specialist finding."""
+
+    finding_ref: str = Field(..., description="Reference: 'document_id:error_type'")
+    verdict: str = Field(..., description="approve | reject | escalate")
+    reason_code: str = Field(..., description="Reason for decision")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class ConflictResolution(BaseModel):
+    """Resolution of conflicting findings between specialists."""
+
+    agents: List[str] = Field(..., description="Agent roles that conflicted")
+    finding: str = Field(..., description="The disputed finding ref")
+    resolution: str = Field(..., description="approve | reject")
+    reason: str = Field(..., description="Justification")
+
+
+class OverseerAction(Action):
+    """Action submitted by the overseer agent."""
+
+    audit_trail_id: str = Field(..., description="Unique review action ID")
+    decisions: List[OverseerDecision] = Field(default_factory=list)
+    conflicts_resolved: List[ConflictResolution] = Field(default_factory=list)
+    task_reassignments: Dict[str, str] = Field(default_factory=dict)
+
+
+class CriticReport(BaseModel):
+    """Structured analysis of campaign failures."""
+
+    missed_error_types: List[str] = Field(default_factory=list)
+    high_fp_agents: List[str] = Field(default_factory=list)
+    cross_period_gaps: List[str] = Field(default_factory=list)
+    checklist_updates: List[str] = Field(default_factory=list)
+    overall_diagnosis: str = ""
+
+
+class CampaignObservation(BaseModel):
+    """Campaign-level observation wrapping period-level data."""
+
+    campaign_id: str = ""
+    current_period: int = 1
+    total_periods: int = 5
+    world_state: WorldState = Field(default_factory=WorldState)
+    period_observation: Optional[AuditObservation] = None
+    findings_history_summary: List[Dict[str, Any]] = Field(default_factory=list)
+    active_alerts: List[Dict[str, Any]] = Field(default_factory=list)
+    budget_remaining: float = 100.0
+    specialist_assignments: Dict[str, str] = Field(default_factory=dict)
+    pending_regulatory_shocks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="New rules dropped mid-period that agent must now apply",
+    )

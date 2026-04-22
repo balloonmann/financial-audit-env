@@ -436,3 +436,225 @@ def compute_step_reward(
             reward -= 0.20
 
     return strict_round_clamp(reward, 2)
+
+
+def compute_ece(
+    findings: List[Dict[str, Any]],
+    ground_truth: List[Dict[str, str]],
+    n_bins: int = 10,
+    min_total: int = 10,
+    min_bin_count: int = 3,
+) -> Dict[str, Any]:
+    """
+    Compute Expected Calibration Error (ECE) for finding confidence.
+
+    Calibration activates only with sufficient data:
+    - at least `min_total` findings with confidence
+    - at least 2 bins with >= `min_bin_count` samples
+    """
+    scored = []
+    gt_set = {
+        (gt["document_id"].strip().upper(), gt["error_type"].strip().lower())
+        for gt in ground_truth
+    }
+
+    for f in findings:
+        conf = f.get("confidence")
+        if conf is None:
+            continue
+        try:
+            c = float(conf)
+        except (TypeError, ValueError):
+            continue
+        c = max(0.0, min(1.0, c))
+        key = (
+            str(f.get("document_id", "")).strip().upper(),
+            str(f.get("error_type", "")).strip().lower(),
+        )
+        label = 1.0 if key in gt_set else 0.0
+        scored.append((c, label))
+
+    if len(scored) < min_total:
+        return {
+            "available": False,
+            "reason": "insufficient_total_samples",
+            "samples": len(scored),
+        }
+
+    bins: List[List[Any]] = [[] for _ in range(n_bins)]
+    for conf, label in scored:
+        idx = min(int(conf * n_bins), n_bins - 1)
+        bins[idx].append((conf, label))
+
+    valid_bins = [b for b in bins if len(b) >= min_bin_count]
+    if len(valid_bins) < 2:
+        return {
+            "available": False,
+            "reason": "insufficient_valid_bins",
+            "samples": len(scored),
+            "valid_bins": len(valid_bins),
+        }
+
+    total = float(len(scored))
+    ece = 0.0
+    brier_sum = 0.0
+    sharpness = 0.0
+    bin_details: List[Dict[str, Any]] = []
+
+    for i, b in enumerate(bins):
+        if not b:
+            continue
+        conf_mean = sum(x[0] for x in b) / len(b)
+        acc_mean = sum(x[1] for x in b) / len(b)
+        w = len(b) / total
+        ece += w * abs(acc_mean - conf_mean)
+        sharpness += w * abs(conf_mean - 0.5)
+        brier_sum += sum((x[0] - x[1]) ** 2 for x in b)
+        bin_details.append(
+            {
+                "bin": i,
+                "count": len(b),
+                "confidence_mean": round(conf_mean, 4),
+                "accuracy_mean": round(acc_mean, 4),
+                "gap": round(abs(acc_mean - conf_mean), 4),
+            }
+        )
+
+    brier = brier_sum / total if total > 0 else 1.0
+    return {
+        "available": True,
+        "samples": int(total),
+        "valid_bins": len(valid_bins),
+        "ece": round(ece, 4),
+        "brier": round(brier, 4),
+        "sharpness": round(sharpness, 4),
+        "bins": bin_details,
+    }
+
+
+def compute_cross_agent_agreement(
+    findings_by_agent: Dict[str, List[Dict[str, Any]]],
+    ground_truth: List[Dict[str, str]],
+) -> Dict[str, Any]:
+    """
+    Score cross-agent agreement on identical (document_id, error_type) claims.
+
+    Agreement reward:
+    - +0.10 per agreed correct finding (2+ agents)
+    - -0.05 per agreed incorrect finding (2+ agents)
+    """
+    gt_set = {
+        (gt["document_id"].strip().upper(), gt["error_type"].strip().lower())
+        for gt in ground_truth
+    }
+
+    claimants: Dict[Any, List[str]] = {}
+    for agent, findings in findings_by_agent.items():
+        seen = set()
+        for f in findings:
+            key = (
+                str(f.get("document_id", "")).strip().upper(),
+                str(f.get("error_type", "")).strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            claimants.setdefault(key, []).append(agent)
+
+    agreed_correct = 0
+    agreed_incorrect = 0
+    details: List[Dict[str, Any]] = []
+    for key, agents in claimants.items():
+        if len(agents) < 2:
+            continue
+        is_correct = key in gt_set
+        if is_correct:
+            agreed_correct += 1
+        else:
+            agreed_incorrect += 1
+        details.append(
+            {
+                "document_id": key[0],
+                "error_type": key[1],
+                "agents": agents,
+                "is_correct": is_correct,
+            }
+        )
+
+    score = (agreed_correct * 0.10) - (agreed_incorrect * 0.05)
+    return {
+        "score": round(score, 4),
+        "agreed_correct": agreed_correct,
+        "agreed_incorrect": agreed_incorrect,
+        "agreements": details,
+    }
+
+
+def compute_campaign_score(
+    specialist_results: Dict[str, Dict[str, Any]],
+    overseer_quality_score: float,
+    instruction_compliance_rate: float,
+    memory_score: float,
+    schema_adaptation_score: float,
+    self_improvement_delta: float,
+    efficiency_score: float,
+    critical_missed: bool,
+) -> Dict[str, Any]:
+    """
+    Compute guarded campaign score with anti-gaming constraints.
+
+    Guards:
+    - Any specialist weighted_F1 < 0.20 => multiplier 0.0
+    - Any critical miss => multiplier 0.5
+    - Bonus components capped to <= 30% of raw total
+    """
+    def _norm(v: float) -> float:
+        return max(0.0, min(1.0, float(v)))
+
+    specialist_weighted = [
+        _norm(r.get("weighted_score", r.get("score", 0.0)))
+        for r in specialist_results.values()
+    ]
+    avg_specialist = sum(specialist_weighted) / len(specialist_weighted) if specialist_weighted else 0.0
+
+    core = (
+        0.35 * avg_specialist
+        + 0.25 * _norm(overseer_quality_score)
+    )
+
+    bonus = (
+        0.10 * _norm(instruction_compliance_rate)
+        + 0.10 * _norm(memory_score)
+        + 0.08 * _norm(schema_adaptation_score)
+        + 0.07 * _norm(self_improvement_delta)
+        + 0.05 * _norm(efficiency_score)
+    )
+
+    raw = core + bonus
+    bonus_cap = raw * 0.30
+    capped_bonus = min(bonus, bonus_cap)
+    raw_capped = core + capped_bonus
+
+    if specialist_weighted and any(x < 0.20 for x in specialist_weighted):
+        quality_multiplier = 0.0
+    elif critical_missed:
+        quality_multiplier = 0.5
+    else:
+        quality_multiplier = 1.0
+
+    final_score = strict_round_clamp(raw_capped * quality_multiplier, 2)
+
+    return {
+        "score": final_score,
+        "raw_score": round(raw, 4),
+        "core_component": round(core, 4),
+        "bonus_component": round(bonus, 4),
+        "bonus_component_capped": round(capped_bonus, 4),
+        "quality_multiplier": quality_multiplier,
+        "avg_specialist_weighted_f1": round(avg_specialist, 4),
+        "specialist_weighted_f1": {
+            k: round(_norm(v.get("weighted_score", v.get("score", 0.0))), 4)
+            for k, v in specialist_results.items()
+        },
+        "critical_missed": bool(critical_missed),
+    }

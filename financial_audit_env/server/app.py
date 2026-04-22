@@ -23,9 +23,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ..models import AuditAction, AuditObservation
+from ..models import AgentRole, AuditAction, AuditObservation, OverseerAction
+from .campaign import CampaignController
 from .environment import FinancialAuditEnvironment
 from .security import setup_security
+from .self_improve import SelfImproveEngine
 from .tasks import TASKS, get_all_tasks_summary
 
 logger = logging.getLogger("financial_audit_env.app")
@@ -38,6 +40,11 @@ _env = FinancialAuditEnvironment()
 # Session-based environments for multi-tenancy
 _sessions: Dict[str, Dict[str, Any]] = {}
 _SESSION_TTL = 3600  # Sessions expire after 1 hour
+
+# Campaign controllers for multi-period orchestration
+_campaigns: Dict[str, CampaignController] = {}
+
+_self_improve_engine = SelfImproveEngine()
 
 # Leaderboard storage
 _leaderboard: List[Dict[str, Any]] = []
@@ -131,6 +138,43 @@ class StepRequest(BaseModel):
     request_categories: Optional[List[str]] = None
 
 
+class CampaignStartRequest(BaseModel):
+    seed: int = 42
+    total_periods: int = 5
+
+
+class CampaignActionRequest(BaseModel):
+    campaign_id: str
+    role: str
+    action: AuditAction
+
+
+class CampaignTaskStartRequest(BaseModel):
+    campaign_id: str
+    role: str
+
+
+class CampaignTaskSubmitRequest(BaseModel):
+    campaign_id: str
+    role: str
+    action: AuditAction
+
+
+class CampaignPeriodRequest(BaseModel):
+    campaign_id: str
+
+
+class OverseerReviewRequest(BaseModel):
+    campaign_id: str
+    action: OverseerAction
+
+
+class SelfImproveRequest(BaseModel):
+    campaign_id: str
+    train_seeds: List[int] = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+    held_out_seeds: List[int] = [100, 101, 102, 103, 104]
+
+
 class BaselineResponse(BaseModel):
     """Response from the /baseline endpoint."""
     scores: Dict[str, Any]
@@ -169,6 +213,13 @@ async def root():
             "tasks": "/tasks",
             "reset": "POST /reset",
             "step": "POST /step",
+            "campaign_start": "POST /campaign/start",
+            "campaign_state": "GET /campaign/state",
+            "campaign_task_start": "POST /campaign/task/start",
+            "campaign_task_submit": "POST /campaign/task/submit",
+            "campaign_period": "POST /campaign/period",
+            "campaign_period_advance": "POST /campaign/period/advance",
+            "overseer_review": "POST /overseer/review",
             "grader": "/grader",
             "leaderboard": "/leaderboard",
             "metrics": "/metrics",
@@ -325,6 +376,196 @@ async def get_grader_score(session_id: Optional[str] = None):
         "confusion_matrix": result.get("confusion_matrix", {}),
         # Risk scoring
         "risk_score": result.get("risk_score", {}),
+    }
+
+
+@app.post("/campaign/start")
+async def campaign_start(request: CampaignStartRequest):
+    """Create and initialize a multi-period campaign controller."""
+    controller = CampaignController(total_periods=request.total_periods)
+    obs = controller.start_campaign(seed=request.seed)
+    _campaigns[obs.campaign_id] = controller
+    return {
+        "status": "started",
+        "campaign_id": obs.campaign_id,
+        "observation": obs.model_dump(),
+    }
+
+
+@app.get("/campaign/state")
+async def campaign_state(campaign_id: str):
+    """Return campaign state and a campaign-level observation snapshot."""
+    controller = _campaigns.get(campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+    obs = controller._build_campaign_observation(None)
+    return {
+        "campaign_id": campaign_id,
+        "state": controller.state.model_dump(),
+        "observation": obs.model_dump(),
+    }
+
+
+@app.get("/campaign/state/{campaign_id}")
+async def campaign_state_by_path(campaign_id: str):
+    """Path-parameter alias for campaign state lookup."""
+    return await campaign_state(campaign_id=campaign_id)
+
+
+@app.post("/campaign/action")
+async def campaign_action(request: CampaignActionRequest):
+    """Submit a specialist action for a campaign role."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+
+    try:
+        role = AgentRole(request.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {request.role}") from exc
+
+    if role == AgentRole.OVERSEER:
+        raise HTTPException(status_code=400, detail="Use /overseer/review for overseer actions")
+
+    try:
+        obs = controller.submit_specialist_action(role, request.action)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "accepted",
+        "campaign_id": request.campaign_id,
+        "observation": obs.model_dump(),
+    }
+
+
+@app.post("/campaign/task/start")
+async def campaign_task_start(request: CampaignTaskStartRequest):
+    """Start/reset a specialist task for the current campaign period."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+    try:
+        role = AgentRole(request.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {request.role}") from exc
+
+    if role == AgentRole.OVERSEER:
+        raise HTTPException(status_code=400, detail="Overseer does not run specialist tasks")
+
+    try:
+        obs = controller.reset_for_role(role)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "started",
+        "campaign_id": request.campaign_id,
+        "observation": obs.model_dump(),
+    }
+
+
+@app.post("/campaign/task/submit")
+async def campaign_task_submit(request: CampaignTaskSubmitRequest):
+    """Submit specialist findings for the current campaign period."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+    try:
+        role = AgentRole(request.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {request.role}") from exc
+
+    if role == AgentRole.OVERSEER:
+        raise HTTPException(status_code=400, detail="Use /overseer/review for overseer decisions")
+
+    try:
+        obs = controller.submit_specialist_action(role, request.action)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "submitted",
+        "campaign_id": request.campaign_id,
+        "observation": obs.model_dump(),
+    }
+
+
+@app.post("/campaign/period")
+@app.post("/campaign/period/advance")
+async def campaign_period(request: CampaignPeriodRequest):
+    """Advance campaign to the next period and return fresh period observation."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+
+    obs = controller.advance_period()
+    return {
+        "status": "advanced",
+        "campaign_id": request.campaign_id,
+        "observation": obs.model_dump(),
+    }
+
+
+@app.post("/overseer/review")
+async def overseer_review(request: OverseerReviewRequest):
+    """Submit overseer review decisions for a campaign period."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+    result = controller.submit_overseer_action(request.action)
+    return {
+        "status": "reviewed",
+        "campaign_id": request.campaign_id,
+        "result": result,
+    }
+
+
+@app.get("/overseer/report")
+async def overseer_report(campaign_id: str):
+    """Return lightweight overseer status snapshot for current campaign period."""
+    controller = _campaigns.get(campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+    return {
+        "campaign_id": campaign_id,
+        "current_period": controller.state.current_period,
+        "budget_remaining": controller.state.budget_remaining,
+        "findings_seen": len(controller.state.findings_history),
+        "regulatory_shocks_applied": controller.state.regulatory_shocks_applied,
+    }
+
+
+@app.post("/self-improve")
+async def self_improve(request: SelfImproveRequest):
+    """Run one self-improvement iteration with strict seed separation."""
+    controller = _campaigns.get(request.campaign_id)
+    if controller is None:
+        raise HTTPException(status_code=404, detail="Unknown campaign_id")
+
+    try:
+        summary = _self_improve_engine.run_iteration(
+            campaign_id=request.campaign_id,
+            train_seeds=request.train_seeds,
+            held_out_seeds=request.held_out_seeds,
+            campaign_controller=controller,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "completed",
+        "campaign_id": request.campaign_id,
+        "summary": summary,
+    }
+
+
+@app.get("/self-improve/history")
+async def self_improve_history(campaign_id: str):
+    """Return self-improvement iteration history for campaign."""
+    return {
+        "campaign_id": campaign_id,
+        "history": _self_improve_engine.get_history(campaign_id),
     }
 
 
