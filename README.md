@@ -21,19 +21,19 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Campaign Controller                           │
-│  5-period campaigns with world mutation, schema drift,           │
-│  regulatory shocks, and cross-period memory                      │
+│                    Campaign Controller                          │
+│  5-period campaigns with world mutation, schema drift,          │
+│  regulatory shocks, and cross-period memory                     │
 ├────────────┬────────────┬────────────┬────────────┬─────────────┤
 │  Expense   │  Invoice   │    GST     │   Fraud    │  Overseer   │
 │ Specialist │ Specialist │ Specialist │ Specialist │   (Review)  │
 ├────────────┴────────────┴────────────┴────────────┴─────────────┤
-│                    Instruction Registry                           │
-│  22 base instructions + 3 regulatory shocks = 25 total           │
+│                    Instruction Registry                         │
+│  22 base instructions + 3 regulatory shocks = 25 total          │
 ├─────────────────────────────────────────────────────────────────┤
-│  Self-Improvement Engine  │  Adversarial Red/Blue  │  Training   │
-│  (Critic + Regression     │  (Difficulty control   │  (GRPO +    │
-│   Gate + Seed Separation) │   + Arms race)         │   Unsloth)  │
+│  Self-Improvement Engine  │  Adversarial Red/Blue  │  Training  │
+│  (Critic + Regression     │  (Difficulty control   │  (GRPO +   │
+│   Gate + Seed Separation) │   + Arms race)         │   Unsloth) │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
