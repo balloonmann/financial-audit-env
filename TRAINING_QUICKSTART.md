@@ -81,6 +81,18 @@ Use this when you want actual model updates, not dry-run.
 !python training/train_grpo.py
 ```
 
+Alternative one-command path:
+
+```python
+!bash scripts/colab_bootstrap_and_train.sh
+```
+
+Low-VRAM profile (recommended on T4 if you hit OOM):
+
+```python
+!bash scripts/colab_train_low_vram.sh
+```
+
 ### Cell 5: Save artifacts
 
 ```python
@@ -152,3 +164,7 @@ Before competition, make sure you can show:
 - Reduce sequence length.
 - Reduce batch size.
 - Reduce number of generations.
+
+5. Easy Colab command set:
+- `bash scripts/colab_bootstrap_and_train.sh` for full setup + train.
+- `bash scripts/colab_train_low_vram.sh` for safer memory profile.

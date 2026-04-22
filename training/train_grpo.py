@@ -32,10 +32,37 @@ if __package__ is None or __package__ == "":
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-MODEL_NAME = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH = 4096
-LORA_R = 16
-LORA_ALPHA = 16
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+MODEL_NAME = os.getenv("TRAIN_MODEL_NAME", "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit")
+MAX_SEQ_LENGTH = _env_int("TRAIN_MAX_SEQ_LENGTH", 4096)
+LORA_R = _env_int("TRAIN_LORA_R", 16)
+LORA_ALPHA = _env_int("TRAIN_LORA_ALPHA", 16)
+TRAIN_EPOCHS = _env_int("TRAIN_EPOCHS", 1)
+TRAIN_BATCH_SIZE = _env_int("TRAIN_BATCH_SIZE", 2)
+TRAIN_NUM_GENERATIONS = _env_int("TRAIN_NUM_GENERATIONS", 4)
+TRAIN_MAX_COMPLETION_LENGTH = _env_int("TRAIN_MAX_COMPLETION_LENGTH", 1024)
+TRAIN_LOGGING_STEPS = _env_int("TRAIN_LOGGING_STEPS", 5)
+TRAIN_SAVE_STEPS = _env_int("TRAIN_SAVE_STEPS", 50)
+TRAIN_LEARNING_RATE = _env_float("TRAIN_LEARNING_RATE", 5e-6)
 TRAIN_SEEDS = list(range(42, 52))       # 10 training seeds
 HELD_OUT_SEEDS = list(range(100, 105))  # 5 held-out seeds
 TASKS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
@@ -176,6 +203,19 @@ def train():
     print("=" * 60)
     print("Financial Audit GRPO Training")
     print("=" * 60)
+    print("Runtime config:")
+    print(f"  MODEL_NAME={MODEL_NAME}")
+    print(f"  MAX_SEQ_LENGTH={MAX_SEQ_LENGTH}")
+    print(f"  LORA_R={LORA_R} LORA_ALPHA={LORA_ALPHA}")
+    print(f"  TRAIN_EPOCHS={TRAIN_EPOCHS} TRAIN_BATCH_SIZE={TRAIN_BATCH_SIZE}")
+    print(
+        "  TRAIN_NUM_GENERATIONS="
+        f"{TRAIN_NUM_GENERATIONS} TRAIN_MAX_COMPLETION_LENGTH={TRAIN_MAX_COMPLETION_LENGTH}"
+    )
+    print(
+        "  TRAIN_LEARNING_RATE="
+        f"{TRAIN_LEARNING_RATE} TRAIN_LOGGING_STEPS={TRAIN_LOGGING_STEPS} TRAIN_SAVE_STEPS={TRAIN_SAVE_STEPS}"
+    )
 
     # Step 1: Load model
     print("\n[1/5] Loading model...")
@@ -236,13 +276,13 @@ def train():
 
         config = GRPOConfig(
             output_dir="./grpo-financial-audit",
-            num_train_epochs=1,
-            per_device_train_batch_size=2,
-            num_generations=4,            # Generate 4 completions per prompt
-            max_completion_length=1024,
-            logging_steps=5,
-            save_steps=50,
-            learning_rate=5e-6,
+            num_train_epochs=TRAIN_EPOCHS,
+            per_device_train_batch_size=TRAIN_BATCH_SIZE,
+            num_generations=TRAIN_NUM_GENERATIONS,
+            max_completion_length=TRAIN_MAX_COMPLETION_LENGTH,
+            logging_steps=TRAIN_LOGGING_STEPS,
+            save_steps=TRAIN_SAVE_STEPS,
+            learning_rate=TRAIN_LEARNING_RATE,
             report_to="none",             # Disable wandb for now
         )
 
