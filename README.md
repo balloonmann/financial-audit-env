@@ -210,6 +210,27 @@ export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 python inference.py --env-url http://localhost:8000
 ```
 
+**Baseline Scores**
+
+| Task | Difficulty | F1 Score | Precision | Recall |
+|------|-----------|----------|-----------|--------|
+| Expense Audit | Easy | 0.1200 | 0.07 | 0.43 |
+| Invoice Match | Medium | 0.1800 | 0.11 | 0.44 |
+| GST Reconciliation | Hard | 0.0100 | 0.01 | 0.01 |
+| Fraud Detection | Expert | 0.1100 | 0.11 | 0.10 |
+
+Scoring notes:
+
+- Seed: `42`
+- Model: `meta-llama/Llama-3.1-8B-Instruct`
+- API provider: HuggingFace Router (`https://router.huggingface.co/v1/`)
+- Baseline parser includes malformed-JSON recovery and compact-prompt fallback for strict context windows
+- Results may vary slightly by provider-side model revision and transient inference behavior
+
+**Why did it fail?**
+The model frequently drops to 0.00 on the tasks because it struggles with abstract rules (like date math for weekend expenses, or tracking cumulative limits). It actively gets tricked by "red herrings"—perfectly legal expenses that it hallucinates as errors—which entirely destroys its precision score.
+
+
 ### Round 2 (Campaign)
 
 ```bash
