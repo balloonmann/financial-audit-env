@@ -200,9 +200,8 @@ model = FastLanguageModel.get_peft_model(
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_dropout=0,
     bias="none",
-    use_gradient_checkpointing="unsloth",
+    use_gradient_checkpointing=False,
 )
-model.enable_input_require_grads()
 
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 all_params = sum(p.numel() for p in model.parameters())
