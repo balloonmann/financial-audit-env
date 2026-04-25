@@ -143,7 +143,7 @@ HF_MODEL_MAP = {
 HF_BASE_ID = HF_MODEL_MAP.get(MODEL_NAME, MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", ""))
 bnb_cfg = BitsAndBytesConfig(
     load_in_4bit=True, bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16,
 )
 base_tok = AutoTokenizer.from_pretrained(HF_BASE_ID, use_fast=True)
 if base_tok.pad_token is None:

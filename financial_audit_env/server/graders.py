@@ -330,8 +330,8 @@ def compute_f1_score(
 #   worth more than late, hedging ones — which mirrors real audit practice where
 #   efficiency matters.
 #
-#   +0.30 recall bonus (recall >= 0.8) on final step
-#   A substantial bonus for catching most of what's there. 0.80 recall was
+#   +0.30 recall bonus (recall >= 0.6) on final step
+#   A substantial bonus for catching most of what's there. 0.60 recall was
 #   chosen as the threshold because it's achievable with competent reasoning but
 #   not trivially so — the Llama 3.1 8B baseline lands around 0.33–0.68 recall
 #   across tasks. The +0.30 value is large enough to be the deciding factor in
@@ -372,7 +372,7 @@ def compute_step_reward(
         -0.05  per false positive in this step
         -0.02  step penalty (discourages unnecessary steps)
         -0.005 × step_number  decay (earlier findings worth more)
-        +0.30  bonus if final submission and recall ≥ 0.8
+        +0.30  bonus if final submission and recall ≥ 0.6
         +0.10  bonus if final submission and precision ≥ 0.9
         -0.20  penalty if final submission and recall < 0.3
     """
