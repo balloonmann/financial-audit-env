@@ -183,25 +183,31 @@ torch.cuda.empty_cache()
 # Step 2: GRPO training
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"\n[{datetime.now()}] Step 2: GRPO training")
-print(f"  Loading {MODEL_NAME} with Unsloth...")
+print(f"  Loading {HF_BASE_ID} with HF PEFT (no Unsloth)...")
 
-from unsloth import FastLanguageModel, PatchFastRL
-PatchFastRL("GRPO", FastLanguageModel)
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name=MODEL_NAME,
-    max_seq_length=MAX_SEQ_LENGTH,
-    load_in_4bit=True,
+bnb_cfg_train = BitsAndBytesConfig(
+    load_in_4bit=True, bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16,
 )
-model = FastLanguageModel.get_peft_model(
-    model,
-    r=LORA_R,
-    lora_alpha=LORA_ALPHA,
+tokenizer = AutoTokenizer.from_pretrained(HF_BASE_ID, use_fast=True)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+model = AutoModelForCausalLM.from_pretrained(
+    HF_BASE_ID, quantization_config=bnb_cfg_train,
+    device_map={"": 0}, low_cpu_mem_usage=True, attn_implementation="eager",
+)
+model.config.use_cache = False
+model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+
+lora_config = LoraConfig(
+    r=LORA_R, lora_alpha=LORA_ALPHA,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-    lora_dropout=0,
-    bias="none",
-    use_gradient_checkpointing=False,
+    lora_dropout=0, bias="none", task_type="CAUSAL_LM",
 )
+model = get_peft_model(model, lora_config)
 
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 all_params = sum(p.numel() for p in model.parameters())
@@ -314,7 +320,7 @@ print(f"  Adapter saved to {ADAPTER_DIR}")
 # Step 3: Post-training evaluation
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"\n[{datetime.now()}] Step 3: Post-training evaluation")
-FastLanguageModel.for_inference(model)
+model.eval()
 trained_df = run_eval(model, tokenizer, TASK_IDS, HELD_OUT_SEEDS, label="GRPO Trained")
 trained_df.to_csv(f"{ARTIFACTS_DIR}/trained_heldout.csv", index=False)
 print(f"  Trained mean score: {trained_df['score'].mean():.4f}")
