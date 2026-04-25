@@ -22,7 +22,7 @@ LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
 NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
-MAX_COMPLETION    = 320
+MAX_COMPLETION    = 512
 LEARNING_RATE     = 2e-5
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
@@ -185,7 +185,8 @@ torch.cuda.empty_cache()
 print(f"\n[{datetime.now()}] Step 2: GRPO training")
 print(f"  Loading {MODEL_NAME} with Unsloth...")
 
-from unsloth import FastLanguageModel
+from unsloth import FastLanguageModel, PatchFastRL
+PatchFastRL("GRPO", FastLanguageModel)
 
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=MODEL_NAME,
@@ -199,8 +200,9 @@ model = FastLanguageModel.get_peft_model(
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_dropout=0,
     bias="none",
-    use_gradient_checkpointing=True,  # Standard checkpointing — 'unsloth' was blocking gradients
+    use_gradient_checkpointing="unsloth",
 )
+model.enable_input_require_grads()
 
 trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 all_params = sum(p.numel() for p in model.parameters())
