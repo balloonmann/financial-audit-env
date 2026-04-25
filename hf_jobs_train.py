@@ -16,14 +16,14 @@ from datetime import datetime
 # Config — tuned for A10G GPU
 # ─────────────────────────────────────────────────────────────────────────────
 MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH    = 2048
+MAX_SEQ_LENGTH    = 4096
 LORA_R            = 16
 LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
 NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
 MAX_COMPLETION    = 512
-LEARNING_RATE     = 5e-6
+LEARNING_RATE     = 1e-5  # Bumped from 5e-6 — more aggressive given few epochs
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
 ADAPTER_DIR       = "./grpo-financial-audit-adapter"
@@ -68,17 +68,33 @@ evaluator = InProcessEvaluator()
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+_ID_FIELDS = (
+    "document_id", "expense_id", "invoice_id", "po_id", "grn_id",
+    "txn_id", "vendor_id", "invoice_no", "id", "doc_id",
+)
+
+def _collect_doc_ids(obj, out):
+    """Recursively collect any known ID fields from nested dicts/lists."""
+    if isinstance(obj, dict):
+        for k in _ID_FIELDS:
+            v = obj.get(k)
+            if isinstance(v, str) and v:
+                out.append(v)
+        for v in obj.values():
+            _collect_doc_ids(v, out)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_doc_ids(item, out)
+
 def build_prompt(task_id, seed):
     env = FinancialAuditEnvironment()
     obs = env.reset(task_id=task_id, seed=seed)
     task = TASKS[task_id]
-    # Extract all document IDs explicitly so model can't invent wrong ones
-    doc_ids = []
-    for doc in obs.documents:
-        if isinstance(doc, dict):
-            did = doc.get("document_id") or doc.get("id") or doc.get("doc_id")
-            if did:
-                doc_ids.append(str(did))
+    # obs.documents is dict-of-lists; collect IDs from every nested doc
+    raw_ids = []
+    _collect_doc_ids(obs.documents, raw_ids)
+    seen = set()
+    doc_ids = [x for x in raw_ids if not (x in seen or seen.add(x))]
     content = (
         "You are a financial auditor. Identify errors in the documents below.\n"
         "Output ONLY a valid JSON array. Each object must have exactly these fields:\n"
@@ -87,7 +103,7 @@ def build_prompt(task_id, seed):
         f"TASK: {obs.task_description}\n\n"
         f"VALID DOCUMENT IDs (use ONLY these exact strings): {json.dumps(doc_ids)}\n\n"
         f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n\n"
-        f"DOCUMENTS:\n{json.dumps(obs.documents)[:7000]}\n\n"
+        f"DOCUMENTS:\n{json.dumps(obs.documents)[:6000]}\n\n"
         "Output the JSON array only. If no errors, output []. No explanation text."
     )
     return [{"role": "user", "content": content}]
@@ -183,7 +199,7 @@ model = FastLanguageModel.get_peft_model(
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_dropout=0,
     bias="none",
-    use_gradient_checkpointing="unsloth",
+    use_gradient_checkpointing=True,  # Standard checkpointing — 'unsloth' was blocking gradients
 )
 
 # Build training dataset
@@ -199,12 +215,12 @@ train_dataset = Dataset.from_list(train_rows)
 print(f"  Dataset: {len(train_dataset)} prompts")
 
 # Reward function — shaped to create variance within GRPO groups.
-# Reward ladder:
-#   0.01  — no JSON attempt at all
-#   0.04  — valid JSON structure but 0 findings parsed
-#   0.06  — findings parsed, 0 doc matches (model tried but wrong IDs)
-#   0.08+ — partial doc matches (right doc, wrong error type)
-#   evaluator score — any true positives (partial_credit_f1, range 0.09–0.99)
+# Tightened ladder so model can't game floor without finding real matches:
+#   0.01   — no JSON attempt
+#   0.02   — JSON attempt but 0 findings parsed
+#   0.025  — findings parsed, 0 doc matches (small bump only)
+#   0.05+  — partial doc matches (right doc, wrong error type)
+#   evaluator score — any true positives (real partial_credit_f1, up to 0.99)
 _reward_debug_n = 0
 
 def _extract_completion_text(comp):
@@ -235,7 +251,7 @@ def reward_fn(completions, task_id, seed, **kwargs):
 
             if not findings:
                 has_json = bool(_re.search(r'\[\s*\{', comp))
-                rewards.append(0.04 if has_json else 0.01)
+                rewards.append(0.02 if has_json else 0.01)
                 continue
 
             result = evaluator.evaluate(tid, int(s), findings)
@@ -243,12 +259,12 @@ def reward_fn(completions, task_id, seed, **kwargs):
             tp   = result.get("true_positives", 0)
             pm   = result.get("partial_matches", 0)
 
-            # Lift floor: any parsed output scores above 0.01
+            # Tight floor: only meaningful matches lift score above 0.025
             if score <= 0.01:
                 if pm > 0:
-                    score = min(0.08 + pm * 0.02, 0.15)  # partial doc hit
+                    score = min(0.05 + pm * 0.015, 0.10)  # partial doc hit
                 else:
-                    score = 0.06  # parsed but no doc match
+                    score = 0.025  # parsed but no doc match
             rewards.append(score)
         except Exception as e:
             print(f"[REWARD ERROR] {e}")
