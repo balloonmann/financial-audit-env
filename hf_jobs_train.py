@@ -49,8 +49,19 @@ from financial_audit_env.server.tasks import TASKS
 from financial_audit_env.models import AuditAction, Finding
 from training.reward import parse_findings_from_text
 from training.evaluator import InProcessEvaluator
-from trl import GRPOTrainer, GRPOConfig
 from datasets import Dataset
+
+try:
+    from trl import GRPOTrainer, GRPOConfig
+except Exception as exc:
+    print("ERROR: Failed to import TRL GRPO components.")
+    print(f"Cause: {exc}")
+    print(
+        "Hint: install pinned training deps with "
+        "'python -m pip install -r requirements-training.txt' "
+        "or run 'bash scripts/hf_jobs_bootstrap_and_train.sh'."
+    )
+    raise
 
 evaluator = InProcessEvaluator()
 

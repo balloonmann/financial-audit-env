@@ -8,7 +8,9 @@ echo "[2/6] Upgrading pip"
 python -m pip install --upgrade pip
 
 echo "[3/6] Installing training dependencies"
-pip install unsloth trl datasets peft accelerate bitsandbytes pytest httpx
+pip install -r requirements-training.txt
+pip uninstall -y torchaudio || true
+python -m pip check || true
 
 echo "[4/6] Installing project package"
 pip install -e .

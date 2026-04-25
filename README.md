@@ -218,10 +218,16 @@ The `training/train_grpo.py` script is designed for Google Colab with free T4 GP
 
 ```bash
 # In Colab:
-!pip install unsloth trl datasets peft
+!pip install -r requirements-training.txt
 
 # Upload financial_audit_env/ and training/ directories, then:
 !python training/train_grpo.py
+```
+
+HF Jobs path (A10G):
+
+```bash
+hf jobs run --flavor a10g-large --timeout 6h --secrets HF_TOKEN pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel -- bash -lc "set -euo pipefail; apt-get update -qq; apt-get install -y -qq git; git clone https://github.com/balloonmann/financial-audit-env.git; cd financial-audit-env; bash scripts/hf_jobs_bootstrap_and_train.sh"
 ```
 
 **Key components:**
