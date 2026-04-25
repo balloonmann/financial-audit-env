@@ -1,0 +1,291 @@
+"""
+HF Jobs training script — run via https://huggingface.co/docs/hub/spaces-run-jobs
+Trains Llama-3.1-8B on financial audit tasks using Unsloth + TRL GRPO.
+"""
+
+import os
+import gc
+import json
+import sys
+import torch
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Config — tuned for A10G GPU
+# ─────────────────────────────────────────────────────────────────────────────
+MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
+MAX_SEQ_LENGTH    = 2048
+LORA_R            = 16
+LORA_ALPHA        = 16
+TRAIN_EPOCHS      = 1
+BATCH_SIZE        = 2       # A10G can handle batch 2
+NUM_GENERATIONS   = 4       # more groups on A10G
+MAX_COMPLETION    = 512
+LEARNING_RATE     = 5e-6
+LOGGING_STEPS     = 5
+SAVE_STEPS        = 50
+ADAPTER_DIR       = "./grpo-financial-audit-adapter"
+ARTIFACTS_DIR     = "./artifacts"
+TRAIN_SEEDS       = list(range(42, 52))
+HELD_OUT_SEEDS    = list(range(100, 105))
+TASK_IDS          = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
+
+os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+os.makedirs(ADAPTER_DIR, exist_ok=True)
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+print(f"[{datetime.now()}] HF Jobs GRPO Training")
+print(f"Model: {MODEL_NAME}")
+print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Imports
+# ─────────────────────────────────────────────────────────────────────────────
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from financial_audit_env.server.environment import FinancialAuditEnvironment
+from financial_audit_env.server.tasks import TASKS
+from financial_audit_env.models import AuditAction, Finding
+from training.reward import parse_findings_from_text
+from training.evaluator import InProcessEvaluator
+from unsloth import FastLanguageModel
+from trl import GRPOTrainer, GRPOConfig
+from datasets import Dataset
+
+evaluator = InProcessEvaluator()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def build_prompt(task_id, seed):
+    env = FinancialAuditEnvironment()
+    obs = env.reset(task_id=task_id, seed=seed)
+    task = TASKS[task_id]
+    content = (
+        "You are a financial auditor. Analyze the documents and output ONLY a JSON array.\n"
+        "Each item must have: document_id, error_type, description, confidence (0.0-1.0).\n\n"
+        f"TASK: {obs.task_description}\n"
+        f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n"
+        f"DOCUMENTS: {json.dumps(obs.documents)[:9000]}\n\n"
+        "Output ONLY the JSON array. No explanation."
+    )
+    return [{"role": "user", "content": content}]
+
+def _norm_conf(x):
+    try:
+        v = float(x)
+    except Exception:
+        return 0.7
+    if v > 1.0 and v <= 100.0:
+        v /= 100.0
+    return max(0.0, min(1.0, v))
+
+def run_eval(model, tokenizer, task_ids, seeds, label):
+    """Evaluate model on task_ids x seeds. Returns DataFrame."""
+    rows = []
+    model.eval()
+    for tid in task_ids:
+        for s in seeds:
+            messages = build_prompt(tid, s)
+            text = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            inputs = tokenizer(text, return_tensors="pt").to(model.device)
+            with torch.no_grad():
+                out = model.generate(
+                    **inputs, max_new_tokens=256, do_sample=False,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
+            completion = tokenizer.decode(
+                out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+            )
+            findings = parse_findings_from_text(completion)
+            result = evaluator.evaluate(tid, s, findings)
+            rows.append({
+                "task_id": tid, "seed": s, "label": label,
+                "score": result["score"],
+                "weighted_score": result["weighted_score"],
+                "precision": result["precision"],
+                "recall": result["recall"],
+                "num_findings": len(findings),
+            })
+    return pd.DataFrame(rows)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 1: Baseline evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"\n[{datetime.now()}] Step 1: Baseline evaluation")
+HF_BASE_ID = MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", "")
+bnb_cfg = BitsAndBytesConfig(
+    load_in_4bit=True, bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16,
+)
+base_tok = AutoTokenizer.from_pretrained(HF_BASE_ID, use_fast=True)
+if base_tok.pad_token is None:
+    base_tok.pad_token = base_tok.eos_token
+base_model = AutoModelForCausalLM.from_pretrained(
+    HF_BASE_ID, quantization_config=bnb_cfg, device_map={"": 0},
+    low_cpu_mem_usage=True, attn_implementation="eager",
+)
+base_model.config.use_cache = False
+
+baseline_df = run_eval(base_model, base_tok, TASK_IDS, HELD_OUT_SEEDS, label="Baseline")
+baseline_df.to_csv(f"{ARTIFACTS_DIR}/baseline_heldout.csv", index=False)
+print(f"  Baseline mean score: {baseline_df['score'].mean():.4f}")
+
+del base_model, base_tok
+gc.collect()
+torch.cuda.empty_cache()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 2: GRPO training
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"\n[{datetime.now()}] Step 2: GRPO training")
+print(f"  Loading {MODEL_NAME} with Unsloth...")
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=MODEL_NAME,
+    max_seq_length=MAX_SEQ_LENGTH,
+    load_in_4bit=True,
+)
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=LORA_R,
+    lora_alpha=LORA_ALPHA,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+)
+
+# Build training dataset
+train_rows = []
+for tid in TASK_IDS:
+    for s in TRAIN_SEEDS:
+        train_rows.append({
+            "prompt": build_prompt(tid, s),
+            "task_id": tid,
+            "seed": s,
+        })
+train_dataset = Dataset.from_list(train_rows)
+print(f"  Dataset: {len(train_dataset)} prompts")
+
+# Reward function
+def reward_fn(completions, task_id, seed, **kwargs):
+    rewards = []
+    for comp, tid, s in zip(completions, task_id, seed):
+        try:
+            findings = parse_findings_from_text(comp)
+            result = evaluator.evaluate(tid, int(s), findings)
+            rewards.append(float(result["score"]))
+        except Exception:
+            rewards.append(0.01)
+    return rewards
+
+# Train
+grpo_config = GRPOConfig(
+    output_dir=ADAPTER_DIR,
+    num_train_epochs=TRAIN_EPOCHS,
+    per_device_train_batch_size=BATCH_SIZE,
+    num_generations=NUM_GENERATIONS,
+    max_completion_length=MAX_COMPLETION,
+    max_prompt_length=MAX_SEQ_LENGTH - MAX_COMPLETION,
+    learning_rate=LEARNING_RATE,
+    logging_steps=LOGGING_STEPS,
+    save_steps=SAVE_STEPS,
+    report_to="none",
+    bf16=True,  # A10G uses bf16
+)
+trainer = GRPOTrainer(
+    model=model,
+    args=grpo_config,
+    train_dataset=train_dataset,
+    reward_funcs=reward_fn,
+    processing_class=tokenizer,
+)
+
+print(f"  Starting GRPO training...")
+trainer.train()
+print(f"  Training complete!")
+
+model.save_pretrained(ADAPTER_DIR)
+tokenizer.save_pretrained(ADAPTER_DIR)
+print(f"  Adapter saved to {ADAPTER_DIR}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 3: Post-training evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"\n[{datetime.now()}] Step 3: Post-training evaluation")
+FastLanguageModel.for_inference(model)
+trained_df = run_eval(model, tokenizer, TASK_IDS, HELD_OUT_SEEDS, label="GRPO Trained")
+trained_df.to_csv(f"{ARTIFACTS_DIR}/trained_heldout.csv", index=False)
+print(f"  Trained mean score: {trained_df['score'].mean():.4f}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 4: Results and plots
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"\n[{datetime.now()}] Step 4: Comparison plots")
+
+def summarize(df):
+    return df.groupby("task_id")[["score", "precision", "recall"]].mean()
+
+tasks = list(summarize(baseline_df).index)
+x = range(len(tasks))
+width = 0.35
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+for ax, metric in zip(axes, ["score", "recall"]):
+    base_vals = summarize(baseline_df)[metric].reindex(tasks).values
+    trai_vals = summarize(trained_df)[metric].reindex(tasks).values
+    ax.bar([i - width/2 for i in x], base_vals, width, label="Baseline", color="steelblue", alpha=0.85)
+    ax.bar([i + width/2 for i in x], trai_vals, width, label="GRPO Trained", color="darkorange", alpha=0.85)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(tasks, rotation=15)
+    ax.set_ylabel(metric.capitalize())
+    ax.set_title(f"Held-out {metric.capitalize()} — Baseline vs Trained")
+    ax.set_ylim(0, 1)
+    ax.legend()
+
+plt.tight_layout()
+plt.savefig(f"{ARTIFACTS_DIR}/before_after_comparison.png", dpi=180, bbox_inches="tight")
+plt.close()
+
+delta = trained_df["score"].mean() - baseline_df["score"].mean()
+pct = delta / max(baseline_df["score"].mean(), 1e-6) * 100
+
+print(f"  Baseline mean score : {baseline_df['score'].mean():.4f}")
+print(f"  Trained  mean score : {trained_df['score'].mean():.4f}")
+print(f"  Delta               : {delta:+.4f}  ({pct:+.1f}%)")
+
+# Summary table
+summary_df = pd.concat([
+    summarize(baseline_df).assign(model="Baseline"),
+    summarize(trained_df).assign(model="GRPO Trained"),
+]).reset_index()
+print("\nResults summary:")
+print(summary_df.pivot_table(index="task_id", columns="model", values="score").round(4))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 5: Upload to HuggingFace Hub
+# ─────────────────────────────────────────────────────────────────────────────
+print(f"\n[{datetime.now()}] Step 5: Upload to HuggingFace Hub")
+
+from huggingface_hub import HfApi, upload_folder, whoami
+
+user = whoami()["name"]
+api = HfApi()
+
+# Upload adapter
+adapter_repo = f"{user}/financial-audit-grpo-adapter"
+api.create_repo(repo_id=adapter_repo, repo_type="model", exist_ok=True)
+upload_folder(repo_id=adapter_repo, folder_path=ADAPTER_DIR, repo_type="model")
+print(f"  Adapter  : https://huggingface.co/{adapter_repo}")
+
+# Upload artifacts
+artifact_repo = f"{user}/financial-audit-eval-artifacts"
+api.create_repo(repo_id=artifact_repo, repo_type="dataset", exist_ok=True)
+upload_folder(repo_id=artifact_repo, folder_path=ARTIFACTS_DIR, repo_type="dataset")
+print(f"  Artifacts: https://huggingface.co/datasets/{artifact_repo}")
+
+print(f"\n[{datetime.now()}] ✓ Training complete!")
