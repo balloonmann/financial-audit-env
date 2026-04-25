@@ -207,12 +207,24 @@ print(f"  Dataset: {len(train_dataset)} prompts")
 #   evaluator score — any true positives (partial_credit_f1, range 0.09–0.99)
 _reward_debug_n = 0
 
+def _extract_completion_text(comp):
+    """TRL may pass completions as str or list of message dicts."""
+    if isinstance(comp, str):
+        return comp
+    if isinstance(comp, list):
+        for msg in reversed(comp):
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                return str(msg.get("content", ""))
+        return " ".join(str(m.get("content", "")) for m in comp if isinstance(m, dict))
+    return str(comp)
+
 def reward_fn(completions, task_id, seed, **kwargs):
     global _reward_debug_n
     import re as _re
     rewards = []
     for comp, tid, s in zip(completions, task_id, seed):
         try:
+            comp = _extract_completion_text(comp)
             findings = parse_findings_from_text(comp)
 
             # Debug: log first 8 reward calls to verify output format
