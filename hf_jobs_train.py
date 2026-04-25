@@ -107,7 +107,7 @@ def build_prompt(task_id, seed):
         f"TASK: {obs.task_description}\n\n"
         f"VALID DOCUMENT IDs (use ONLY these exact strings): {json.dumps(doc_ids)}\n\n"
         f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n\n"
-        f"DOCUMENTS:\n{json.dumps(obs.documents)[:6000]}\n\n"
+        f"DOCUMENTS:\n{json.dumps(obs.documents)[:4000]}\n\n"
         "Output the JSON array only. If no errors, output []. No explanation text."
     )
     return [{"role": "user", "content": content}]
@@ -277,6 +277,7 @@ grpo_config = GRPOConfig(
     save_steps=SAVE_STEPS,
     report_to="none",
     bf16=True,  # A10G uses bf16
+    beta=0.0,   # Disable KL penalty -> frees reference model from VRAM (~5 GiB savings)
 )
 trainer = GRPOTrainer(
     model=model,
