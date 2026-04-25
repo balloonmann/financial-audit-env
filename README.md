@@ -143,9 +143,10 @@ Period N:
 
 | Metric | What It Measures |
 |--------|-----------------| 
-| **F1 Score** (0.01–0.99) | Primary metric — exact `(document_id, error_type)` matches |
+| **Partial Credit F1** (0.01–0.99) | Primary metric — rewards right document even with wrong error type (0.40 credit) |
+| **Strict F1** | Exact `(document_id, error_type)` matches only |
 | **Weighted F1** | Critical errors count more (fraud=2.0×, weekend expense=0.5×) |
-| **Partial Credit** | Right document, wrong error type = 0.25 credit |
+| **Partial Credit** | Right document, wrong error type = 0.40 credit (false positive weight = 0.60) |
 | **Confusion Matrix** | Per-error-type breakdown |
 | **Risk Score** | Monetary value of caught vs missed errors |
 | **ECE** | Expected Calibration Error (when confidence scores provided) |
@@ -165,7 +166,7 @@ Formula: **35%** specialist F1 + **25%** overseer quality + **10%** instruction 
 - **+0.04** per partial match (right doc, wrong error type)
 - **−0.05** per false positive
 - **−0.02** step penalty + **−0.005** × step_number decay
-- **+0.30** bonus on final step if recall ≥ 0.8
+- **+0.30** bonus on final step if recall ≥ 0.6
 - **−0.20** penalty on final step if recall < 0.3
 
 ---
@@ -304,7 +305,7 @@ financial_audit_env/
     app.py              # FastAPI — all endpoints (standard + Round 2 campaign)
     environment.py      # Core RL environment (reset, step, state)
     data_generator.py   # Synthetic data with planted errors + schema drift helpers
-    graders.py          # F1, weighted F1, ECE, campaign score, cross-agent agreement
+    graders.py          # Partial Credit F1 (primary), weighted F1, ECE, campaign score, cross-agent agreement
     campaign.py         # Campaign controller — 5-period orchestration
     instructions.py     # 22 frozen instructions + 3 regulatory shocks
     regulatory.py       # Mid-period regulatory shock engine
