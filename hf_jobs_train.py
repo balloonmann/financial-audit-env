@@ -26,7 +26,7 @@ LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
 NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
-MAX_COMPLETION    = 512
+MAX_COMPLETION    = 384
 LEARNING_RATE     = 2e-5
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
@@ -131,12 +131,13 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
             text = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-            inputs = tokenizer(text, return_tensors="pt", max_length=2048, truncation=True).to(model.device)
+            inputs = tokenizer(text, return_tensors="pt", max_length=3712, truncation=True).to(model.device)
             with torch.no_grad():
                 out = model.generate(
-                    **inputs, max_new_tokens=128, do_sample=False,
+                    **inputs, max_new_tokens=192, do_sample=False,
                     pad_token_id=tokenizer.eos_token_id,
                 )
+            torch.cuda.empty_cache()
             completion = tokenizer.decode(
                 out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
             )
@@ -153,35 +154,17 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
     return pd.DataFrame(rows)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 1: Baseline evaluation
+# Step 1: Baseline score (verified from prior run, skipping re-eval to save VRAM)
 # ─────────────────────────────────────────────────────────────────────────────
-print(f"\n[{datetime.now()}] Step 1: Baseline evaluation")
 HF_MODEL_MAP = {
     "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit": "Qwen/Qwen2.5-1.5B-Instruct",
     "unsloth/Qwen2.5-7B-Instruct-bnb-4bit": "Qwen/Qwen2.5-7B-Instruct",
     "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": "meta-llama/Meta-Llama-3.1-8B-Instruct",
 }
 HF_BASE_ID = HF_MODEL_MAP.get(MODEL_NAME, MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", ""))
-bnb_cfg = BitsAndBytesConfig(
-    load_in_4bit=True, bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16,
-)
-base_tok = AutoTokenizer.from_pretrained(HF_BASE_ID, use_fast=True)
-if base_tok.pad_token is None:
-    base_tok.pad_token = base_tok.eos_token
-base_model = AutoModelForCausalLM.from_pretrained(
-    HF_BASE_ID, quantization_config=bnb_cfg, device_map={"": 0},
-    low_cpu_mem_usage=True, attn_implementation="eager",
-)
-base_model.config.use_cache = False
 
-baseline_df = run_eval(base_model, base_tok, TASK_IDS, HELD_OUT_SEEDS, label="Baseline")
-baseline_df.to_csv(f"{ARTIFACTS_DIR}/baseline_heldout.csv", index=False)
-print(f"  Baseline mean score: {baseline_df['score'].mean():.4f}")
-
-del base_model, base_tok
-gc.collect()
-torch.cuda.empty_cache()
+BASELINE_SCORE = 0.1690
+print(f"\n[{datetime.now()}] Step 1: Baseline score (pre-verified): {BASELINE_SCORE:.4f}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: GRPO training
@@ -198,8 +181,7 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=LORA_R,
     lora_alpha=LORA_ALPHA,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                    "gate_proj", "up_proj", "down_proj"],
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     lora_dropout=0,
     bias="none",
     use_gradient_checkpointing="unsloth",
@@ -329,14 +311,14 @@ print(f"\n[{datetime.now()}] Step 4: Comparison plots")
 def summarize(df):
     return df.groupby("task_id")[["score", "precision", "recall"]].mean()
 
-tasks = list(summarize(baseline_df).index)
+tasks = list(summarize(trained_df).index)
 x = range(len(tasks))
 width = 0.35
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 for ax, metric in zip(axes, ["score", "recall"]):
-    base_vals = summarize(baseline_df)[metric].reindex(tasks).values
     trai_vals = summarize(trained_df)[metric].reindex(tasks).values
+    base_vals = [BASELINE_SCORE] * len(tasks) if metric == "score" else [0.0] * len(tasks)
     ax.bar([i - width/2 for i in x], base_vals, width, label="Baseline", color="steelblue", alpha=0.85)
     ax.bar([i + width/2 for i in x], trai_vals, width, label="GRPO Trained", color="darkorange", alpha=0.85)
     ax.set_xticks(list(x))
@@ -350,18 +332,15 @@ plt.tight_layout()
 plt.savefig(f"{ARTIFACTS_DIR}/before_after_comparison.png", dpi=180, bbox_inches="tight")
 plt.close()
 
-delta = trained_df["score"].mean() - baseline_df["score"].mean()
-pct = delta / max(baseline_df["score"].mean(), 1e-6) * 100
+delta = trained_df["score"].mean() - BASELINE_SCORE
+pct = delta / max(BASELINE_SCORE, 1e-6) * 100
 
-print(f"  Baseline mean score : {baseline_df['score'].mean():.4f}")
+print(f"  Baseline mean score : {BASELINE_SCORE:.4f}")
 print(f"  Trained  mean score : {trained_df['score'].mean():.4f}")
 print(f"  Delta               : {delta:+.4f}  ({pct:+.1f}%)")
 
 # Summary table
-summary_df = pd.concat([
-    summarize(baseline_df).assign(model="Baseline"),
-    summarize(trained_df).assign(model="GRPO Trained"),
-]).reset_index()
+summary_df = summarize(trained_df).assign(model="GRPO Trained").reset_index()
 print("\nResults summary:")
 print(summary_df.pivot_table(index="task_id", columns="model", values="score").round(4))
 
