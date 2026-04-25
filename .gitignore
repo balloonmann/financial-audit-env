@@ -21,6 +21,11 @@ __pycache__/
 .pyre/
 .pytest_cache/
 
+# Markdown docs (except README)
+HACKATHON_CORE_IDEA.md
+HACKATHON_TESTING_TRAINING_PLAN.md
+TRAINING_QUICKSTART.md
+
 # Round 2 Planning Docs (keep locally, not in repo)
 ROUND2_BLUEPRINT.md
 ROUND2_BLUEPRINT_REVIEW_ARTIFACT.md
