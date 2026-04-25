@@ -26,6 +26,45 @@ Automation:
 
 ---
 
+## Submission Hub (Competition)
+
+This section is the single source of truth for all links judges need.
+
+### Required Links
+
+- GitHub Repository: https://github.com/balloonmann/financial-audit-env
+- Hugging Face Space (Environment URL): https://balloonmann-financial-audit-env.hf.space
+- Colab Notebook (Training Repro): `TODO - add shareable Colab URL for final_lwo_vram_training_updated.ipynb`
+- Hugging Face Blog / YouTube (<2 min) / Slide Deck: `TODO - add final storytelling URL`
+
+### Training Evidence (Required)
+
+- Baseline vs Trained table on held-out seeds: `PENDING FINAL (Llama baseline vs Llama+adapter)`
+- Iteration 1 baseline artifacts (Qwen 1.5B interim): https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
+- Adapter artifact (from low-vram training run): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
+- Baseline plot currently available: `baseline_score_heldout.png` (in eval artifacts dataset)
+- Optional W&B run link: `TODO - add if used`
+
+### Competition-Day Submission Checklist
+
+- [x] OpenEnv-compatible environment implemented and hosted on HF Space.
+- [x] `openenv.yaml` present and valid.
+- [x] Minimal Unsloth + TRL training script implemented for Colab flow.
+- [x] Iteration 1 baseline artifacts generated and uploaded.
+- [ ] Colab notebook link added and publicly accessible.
+- [ ] Storytelling artifact link added (HF blog or video or slides).
+- [ ] Training-improvement evidence embedded in README with captions.
+- [ ] All submission links verified publicly accessible.
+
+### How This README Maps to Judging Criteria
+
+- Environment Innovation (40%): multi-agent campaign + shocks + schema drift + self-improvement.
+- Storytelling (30%): domain framing, architecture, flow, and problem relevance are documented.
+- Showing Improvement in Rewards (20%): scaffold present, final before/after evidence to be added tomorrow.
+- Reward & Training Pipeline (10%): deterministic graders + reward parser + GRPO training path implemented.
+
+---
+
 ## Round 2 Architecture
 
 ```
@@ -179,10 +218,16 @@ The `training/train_grpo.py` script is designed for Google Colab with free T4 GP
 
 ```bash
 # In Colab:
-!pip install unsloth trl datasets peft
+!pip install -r requirements-training.txt
 
 # Upload financial_audit_env/ and training/ directories, then:
 !python training/train_grpo.py
+```
+
+HF Jobs path (A10G):
+
+```bash
+hf jobs run --flavor a10g-large --timeout 6h --secrets HF_TOKEN pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel -- bash -lc "set -euo pipefail; apt-get update -qq; apt-get install -y -qq git; git clone https://github.com/balloonmann/financial-audit-env.git; cd financial-audit-env; bash scripts/hf_jobs_bootstrap_and_train.sh"
 ```
 
 **Key components:**
@@ -206,6 +251,45 @@ The self-improvement engine enforces **strict disjoint seed sets** — overlappi
 python training/train_grpo.py
 # Output: "✅ All pipeline components verified. Ready for Colab with Unsloth."
 ```
+
+---
+
+### Final Training Results (To Fill on Competition Day)
+
+Add final metrics here after GPU-backed run with credits.
+
+| Split | Task | Baseline Score | Trained Score | Delta |
+|------|------|----------------|---------------|-------|
+| Held-out (100-104) | expense_audit | TODO | TODO | TODO |
+| Held-out (100-104) | invoice_match | TODO | TODO | TODO |
+| Held-out (100-104) | gst_reconciliation | TODO | TODO | TODO |
+| Held-out (100-104) | fraud_detection | TODO | TODO | TODO |
+
+### Iteration 1 Interim Baseline (Qwen 1.5B)
+
+This is an interim baseline pass used to validate evaluation plumbing and artifact export on constrained T4 memory. Final submission comparison will use Llama baseline vs Llama+adapter.
+
+| task_id | score | weighted_score | precision | recall |
+|---------|-------|----------------|-----------|--------|
+| expense_audit | 0.01 | 0.01 | 0.01 | 0.01 |
+| fraud_detection | 0.01 | 0.01 | 0.01 | 0.01 |
+| gst_reconciliation | 0.01 | 0.01 | 0.01 | 0.01 |
+| invoice_match | 0.01 | 0.01 | 0.01 | 0.01 |
+
+Iteration 1 artifact links:
+
+- Eval artifacts dataset: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
+- Adapter artifact repo: https://huggingface.co/balloonmann/financial-audit-grpo-adapter
+- Local Colab artifact paths used:
+  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_heldout.csv`
+  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_summary.csv`
+  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_score_heldout.png`
+
+Planned evidence inserts:
+
+- `TODO`: reward curve plot image path (with one-line caption)
+- `TODO`: loss curve plot image path (with one-line caption)
+- `TODO`: baseline-vs-trained comparison plot image path
 
 ---
 
@@ -295,6 +379,38 @@ docker run -p 8000:8000 financial-audit-env
 python -m pytest tests/ -x -v
 ```
 
+### Judge Runbook (Fast Repro)
+
+Use this exact sequence for a quick end-to-end verification:
+
+```bash
+# 1) Install package
+pip install -e .
+
+# 2) Start environment server
+python -m financial_audit_env.server.app
+
+# 3) In a new terminal: run smoke checks
+python verify_r2_score.py
+
+# 4) Run full deterministic verification suite
+python verify_full.py
+
+# 5) Run all tests
+python -m pytest tests -q
+
+# 6) Run campaign inference flow
+python inference.py --env-url http://localhost:8000 --campaign --seed 42
+```
+
+### Submission Artifacts Checklist (To Fill Tomorrow)
+
+- [ ] Add `Baseline vs Trained` held-out metrics table (seeds 100-104).
+- [ ] Add reward/loss and comparison plots (`.png` or `.jpg`) to repo.
+- [ ] Add HF blog post link OR `<2 min` YouTube link OR short slide deck link.
+- [ ] Add links in one README section: HF Space, HF model adapter, artifact post/video/deck.
+- [ ] Confirm all links are public and accessible without extra permissions.
+
 ---
 
 ## Project Structure
@@ -350,11 +466,22 @@ Dockerfile              # HuggingFace Spaces deployment
 | **Showing Improvement in Rewards (20%)** | GRPO training script + self-improvement engine with before/after comparison on held-out seeds |
 | **Reward and Training Pipeline (10%)** | InProcessEvaluator + GRPO reward function + Colab-ready training script |
 
+### Minimum Submission Requirements Coverage
+
+| Requirement from Guidelines | Current Status | Notes |
+|-----------------------------|----------------|-------|
+| Use OpenEnv (latest release) | Covered | Dependency floor set to `openenv-core>=0.2.3` |
+| Minimal training script via Unsloth or HF TRL (Colab-rerunnable) | Covered | `training/train_grpo.py` + Colab scripts present |
+| Evidence of real training (loss/reward plots) | Pending | To be added after final run tomorrow |
+| Short write-up artifact (HF blog / <2 min video / slides) | Pending | To be added tomorrow |
+| Environment hosted on Hugging Face Space | Covered | Live Space link provided |
+| README includes all links and results | Partially covered | Link scaffold added; pending final artifact URLs and plots |
+
 ---
 
 ## Round 2 Implementation Scorecard
 
-> Verified on 2026-04-22 with `python verify_r2_score.py` — **108 tests passing**, all components functional.
+> Verified on 2026-04-24 with `python verify_r2_score.py` and `python -m pytest tests -q` - campaign flow wired and checks passing.
 
 ### Implementation Status
 
@@ -368,10 +495,10 @@ Dockerfile              # HuggingFace Spaces deployment
 | 6 | **Regulatory Shock Engine** — Mid-period rule injection with ground truth modification | ✅ Complete | REG-001 at P3/S3, REG-002+003 at P4. GT extends correctly |
 | 7 | **Adversarial Red/Blue** — 5-level fraud difficulty with arms race tracking | ✅ Complete | Difficulty adapts on F1 > 0.70, deterministic per seed |
 | 8 | **Training Infrastructure** — InProcessEvaluator, reward parser, GRPO script | ✅ Complete | JSON + free-text parsing, Colab dry-run ready |
-| 9 | **Inference (Campaign)** — Multi-period campaign inference flow | ⚠️ Partial | Single-task inference works; full campaign loop is onsite work |
-| 10 | **Tests + README** — 108 pytest tests, documentation | ✅ Complete | All 108 pass in ~10s |
+| 9 | **Inference (Campaign)** - Multi-period campaign inference flow | Complete | Campaign runner, endpoints, and CLI flag are present and validated |
+| 10 | **Tests + README** - pytest suite + documentation | Complete | Full test suite currently passes locally |
 
-**Overall: 9/10 steps complete. Step 9 (campaign inference loop) completes onsite with GPU access.**
+**Overall: 10/10 steps complete on implementation readiness.**
 
 ### Verified Scoring Metrics
 

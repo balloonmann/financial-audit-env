@@ -15,7 +15,7 @@ Run from repository root:
 python -m pip install --upgrade pip
 pip install -e .
 pip install pytest httpx
-pip install trl datasets peft accelerate
+pip install -r requirements-training.txt
 ```
 
 Optional local attempt (may fail on native Windows, expected):
@@ -58,7 +58,7 @@ Use this when you want actual model updates, not dry-run.
 
 ```python
 !pip -q install --upgrade pip
-!pip -q install unsloth trl datasets peft accelerate bitsandbytes
+!pip -q install -r requirements-training.txt
 ```
 
 ### Cell 2: Get repository
@@ -85,6 +85,12 @@ Alternative one-command path:
 
 ```python
 !bash scripts/colab_bootstrap_and_train.sh
+```
+
+HF Jobs one-command path:
+
+```bash
+hf jobs run --flavor a10g-large --timeout 6h --secrets HF_TOKEN pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel -- bash -lc "set -euo pipefail; apt-get update -qq; apt-get install -y -qq git; git clone https://github.com/balloonmann/financial-audit-env.git; cd financial-audit-env; bash scripts/hf_jobs_bootstrap_and_train.sh"
 ```
 
 Low-VRAM profile (recommended on T4 if you hit OOM):
@@ -168,3 +174,6 @@ Before competition, make sure you can show:
 5. Easy Colab command set:
 - `bash scripts/colab_bootstrap_and_train.sh` for full setup + train.
 - `bash scripts/colab_train_low_vram.sh` for safer memory profile.
+
+6. HF Jobs error `No module named 'mergekit'`:
+- Use the pinned dependency path (`requirements-training.txt`) or run `bash scripts/hf_jobs_bootstrap_and_train.sh`.

@@ -30,19 +30,19 @@ dependencies = [
     "requests>=2.31.0",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
-    "openenv-core>=0.2.0",
+    "openenv-core>=0.2.3",
 ]
 
 [project.scripts]
 server = "financial_audit_env.server.app:main"
 
 [project.optional-dependencies]
-openenv = ["openenv-core>=0.2.0"]
+openenv = ["openenv-core>=0.2.3"]
 dev = ["pytest>=7.0", "httpx>=0.25.0"]
 
 [project.urls]
-Homepage = "https://github.com/Harshit/financial-audit-env"
-Repository = "https://github.com/Harshit/financial-audit-env"
+Homepage = "https://github.com/balloonmann/financial-audit-env"
+Repository = "https://github.com/balloonmann/financial-audit-env"
 
 [tool.setuptools.packages.find]
 include = ["financial_audit_env*"]

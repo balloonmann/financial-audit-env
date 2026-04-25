@@ -1,0 +1,32 @@
+# Pinned training stack for Colab and HF Jobs.
+# Keep this file in sync with hf_jobs_train.py runtime expectations.
+transformers==4.57.2
+trl==0.23.0
+datasets==4.8.4
+peft==0.19.1
+accelerate==1.13.0
+bitsandbytes==0.45.5
+diffusers==0.37.1
+huggingface_hub==0.36.2
+pydantic==2.10.6
+click==8.2.1
+safetensors==0.5.2
+sentencepiece
+tokenizers
+protobuf
+tyro
+msgspec
+hf_transfer
+immutables
+scipy
+
+# Project tooling used in training/eval scripts.
+pytest
+httpx
+matplotlib
+pandas
+
+# NOTE:
+# mergekit is installed separately with --no-deps in bootstrap scripts.
+# Reason: mergekit's transitive pins can conflict with the Unsloth/TRL stack,
+# but TRL only needs mergekit present for optional import paths.

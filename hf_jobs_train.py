@@ -29,7 +29,7 @@ SAVE_STEPS        = 50
 ADAPTER_DIR       = "./grpo-financial-audit-adapter"
 ARTIFACTS_DIR     = "./artifacts"
 TRAIN_SEEDS       = list(range(42, 52))
-HELD_OUT_SEEDS    = list(range(100, 102))
+HELD_OUT_SEEDS    = list(range(100, 105))
 TASK_IDS          = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
 
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
@@ -49,9 +49,19 @@ from financial_audit_env.server.tasks import TASKS
 from financial_audit_env.models import AuditAction, Finding
 from training.reward import parse_findings_from_text
 from training.evaluator import InProcessEvaluator
-from unsloth import FastLanguageModel
-from trl import GRPOTrainer, GRPOConfig
 from datasets import Dataset
+
+try:
+    from trl import GRPOTrainer, GRPOConfig
+except Exception as exc:
+    print("ERROR: Failed to import TRL GRPO components.")
+    print(f"Cause: {exc}")
+    print(
+        "Hint: install pinned training deps with "
+        "'python -m pip install -r requirements-training.txt' "
+        "or run 'bash scripts/hf_jobs_bootstrap_and_train.sh'."
+    )
+    raise
 
 evaluator = InProcessEvaluator()
 
@@ -126,14 +136,14 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"\n[{datetime.now()}] Step 1: Baseline evaluation")
 HF_MODEL_MAP = {
-    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": "meta-llama/Meta-Llama-3.1-8B-Instruct",
     "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit": "Qwen/Qwen2.5-1.5B-Instruct",
     "unsloth/Qwen2.5-7B-Instruct-bnb-4bit": "Qwen/Qwen2.5-7B-Instruct",
+    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": "meta-llama/Meta-Llama-3.1-8B-Instruct",
 }
 HF_BASE_ID = HF_MODEL_MAP.get(MODEL_NAME, MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", ""))
 bnb_cfg = BitsAndBytesConfig(
     load_in_4bit=True, bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16,
 )
 base_tok = AutoTokenizer.from_pretrained(HF_BASE_ID, use_fast=True)
 if base_tok.pad_token is None:
@@ -158,11 +168,12 @@ torch.cuda.empty_cache()
 print(f"\n[{datetime.now()}] Step 2: GRPO training")
 print(f"  Loading {MODEL_NAME} with Unsloth...")
 
+from unsloth import FastLanguageModel
+
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=MODEL_NAME,
     max_seq_length=MAX_SEQ_LENGTH,
     load_in_4bit=True,
-    dtype=torch.bfloat16,
 )
 model = FastLanguageModel.get_peft_model(
     model,
