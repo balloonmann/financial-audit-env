@@ -257,7 +257,7 @@ def reward_fn(completions, task_id, seed, **kwargs):
             result = evaluator.evaluate(tid, int(s), findings)
             score = float(result["score"])
             tp   = result.get("true_positives", 0)
-            pm   = result.get("partial_matches", 0)
+            pm   = result.get("grader_result", {}).get("partial_matches", 0)
 
             # Tight floor: only meaningful matches lift score above 0.025
             if score <= 0.01:
