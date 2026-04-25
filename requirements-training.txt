@@ -1,15 +1,11 @@
 # Pinned training stack for Colab and HF Jobs.
 # Keep this file in sync with hf_jobs_train.py runtime expectations.
-unsloth==2025.11.1
-unsloth_zoo==2025.11.2
 transformers==4.57.2
 trl==0.23.0
 datasets==4.8.4
 peft==0.19.1
 accelerate==1.13.0
 bitsandbytes==0.45.5
-xformers==0.0.35
-torchao==0.17.0
 diffusers==0.37.1
 huggingface_hub==0.36.2
 pydantic==2.10.6

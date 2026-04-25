@@ -8,7 +8,9 @@ echo "[2/6] Upgrading pip"
 python -m pip install --upgrade pip
 
 echo "[3/6] Installing training dependencies"
+pip install --extra-index-url https://download.pytorch.org/whl/cu124 --upgrade --force-reinstall torch==2.6.0+cu124 torchvision==0.21.0+cu124
 pip install -r requirements-training.txt
+pip install --no-deps unsloth==2025.11.1 unsloth_zoo==2025.11.2
 pip install --no-deps mergekit==0.1.4
 pip install immutables scipy
 pip uninstall -y torchaudio || true
