@@ -131,10 +131,10 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
             text = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-            inputs = tokenizer(text, return_tensors="pt").to(model.device)
+            inputs = tokenizer(text, return_tensors="pt", max_length=2048, truncation=True).to(model.device)
             with torch.no_grad():
                 out = model.generate(
-                    **inputs, max_new_tokens=256, do_sample=False,
+                    **inputs, max_new_tokens=128, do_sample=False,
                     pad_token_id=tokenizer.eos_token_id,
                 )
             completion = tokenizer.decode(
