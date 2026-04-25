@@ -22,8 +22,8 @@ LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
 NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
-MAX_COMPLETION    = 512
-LEARNING_RATE     = 1e-5  # Bumped from 5e-6 — more aggressive given few epochs
+MAX_COMPLETION    = 320
+LEARNING_RATE     = 2e-5
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
 ADAPTER_DIR       = "./grpo-financial-audit-adapter"
@@ -202,6 +202,13 @@ model = FastLanguageModel.get_peft_model(
     use_gradient_checkpointing=True,  # Standard checkpointing — 'unsloth' was blocking gradients
 )
 
+trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+all_params = sum(p.numel() for p in model.parameters())
+print(
+    f"  Trainable params: {trainable_params:,} / {all_params:,} "
+    f"({100.0 * trainable_params / max(all_params, 1):.4f}%)"
+)
+
 # Build training dataset
 train_rows = []
 for tid in TASK_IDS:
@@ -280,6 +287,7 @@ grpo_config = GRPOConfig(
     max_completion_length=MAX_COMPLETION,
     max_prompt_length=MAX_SEQ_LENGTH - MAX_COMPLETION,
     learning_rate=LEARNING_RATE,
+    max_grad_norm=1.0,
     logging_steps=LOGGING_STEPS,
     save_steps=SAVE_STEPS,
     report_to="none",
