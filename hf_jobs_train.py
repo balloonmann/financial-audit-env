@@ -116,7 +116,12 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
 # Step 1: Baseline evaluation
 # ─────────────────────────────────────────────────────────────────────────────
 print(f"\n[{datetime.now()}] Step 1: Baseline evaluation")
-HF_BASE_ID = MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", "")
+HF_MODEL_MAP = {
+    "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit": "Qwen/Qwen2.5-1.5B-Instruct",
+    "unsloth/Qwen2.5-7B-Instruct-bnb-4bit": "Qwen/Qwen2.5-7B-Instruct",
+}
+HF_BASE_ID = HF_MODEL_MAP.get(MODEL_NAME, MODEL_NAME.replace("unsloth/", "").replace("-bnb-4bit", ""))
 bnb_cfg = BitsAndBytesConfig(
     load_in_4bit=True, bnb_4bit_use_double_quant=True,
     bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16,
