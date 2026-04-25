@@ -45,11 +45,15 @@ class InProcessEvaluator:
 
         findings = []
         for f in findings_dicts:
+            def _clean_text(value: Any, fallback: str) -> str:
+                text = str(value).strip() if value is not None else ""
+                return text if text else fallback
+
             findings.append(
                 Finding(
-                    document_id=f.get("document_id", "UNKNOWN"),
-                    error_type=f.get("error_type", "unknown"),
-                    description=f.get("description", "Finding"),
+                    document_id=_clean_text(f.get("document_id"), "UNKNOWN"),
+                    error_type=_clean_text(f.get("error_type"), "unknown"),
+                    description=_clean_text(f.get("description"), "Finding"),
                     confidence=f.get("confidence"),
                     evidence_refs=f.get("evidence_refs", []),
                     rationale=f.get("rationale"),

@@ -98,3 +98,22 @@ def test_inprocess_evaluator_smoke_returns_expected_keys():
     assert "recall" in result
     assert "grader_result" in result
     assert 0.01 <= result["score"] <= 0.99
+
+
+def test_inprocess_evaluator_sanitizes_empty_description():
+    evaluator = InProcessEvaluator()
+    result = evaluator.evaluate(
+        task_id="expense_audit",
+        seed=42,
+        findings_dicts=[
+            {
+                "document_id": "EXP-001",
+                "error_type": "over_limit",
+                "description": "",
+                "confidence": 0.7,
+            }
+        ],
+    )
+
+    assert "score" in result
+    assert 0.01 <= result["score"] <= 0.99
