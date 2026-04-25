@@ -22,7 +22,8 @@ LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
 NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
-MAX_COMPLETION    = 512
+MAX_COMPLETION    = 384
+MAX_PROMPT_TOKENS = 2048
 LEARNING_RATE     = 2e-5
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
@@ -103,7 +104,7 @@ def build_prompt(task_id, seed):
         f"TASK: {obs.task_description}\n\n"
         f"VALID DOCUMENT IDs (use ONLY these exact strings): {json.dumps(doc_ids)}\n\n"
         f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n\n"
-        f"DOCUMENTS:\n{json.dumps(obs.documents)[:6000]}\n\n"
+        f"DOCUMENTS:\n{json.dumps(obs.documents)[:4500]}\n\n"
         "Output the JSON array only. If no errors, output []. No explanation text."
     )
     return [{"role": "user", "content": content}]
@@ -287,7 +288,7 @@ grpo_config = GRPOConfig(
     per_device_train_batch_size=BATCH_SIZE,
     num_generations=NUM_GENERATIONS,
     max_completion_length=MAX_COMPLETION,
-    max_prompt_length=MAX_SEQ_LENGTH - MAX_COMPLETION,
+    max_prompt_length=MAX_PROMPT_TOKENS,
     learning_rate=LEARNING_RATE,
     max_grad_norm=1.0,
     logging_steps=LOGGING_STEPS,
