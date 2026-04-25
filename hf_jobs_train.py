@@ -21,7 +21,7 @@ LORA_R            = 16
 LORA_ALPHA        = 16
 TRAIN_EPOCHS      = 3
 BATCH_SIZE        = 1       # Reduced for memory stability
-NUM_GENERATIONS   = 2       # Reduced to avoid OOM
+NUM_GENERATIONS   = 4       # 4 gives GRPO enough group variance
 MAX_COMPLETION    = 512
 LEARNING_RATE     = 5e-6
 LOGGING_STEPS     = 5
@@ -62,13 +62,22 @@ def build_prompt(task_id, seed):
     env = FinancialAuditEnvironment()
     obs = env.reset(task_id=task_id, seed=seed)
     task = TASKS[task_id]
+    # Extract all document IDs explicitly so model can't invent wrong ones
+    doc_ids = []
+    for doc in obs.documents:
+        did = doc.get("document_id") or doc.get("id") or doc.get("doc_id")
+        if did:
+            doc_ids.append(str(did))
     content = (
-        "You are a financial auditor. Analyze the documents and output ONLY a JSON array.\n"
-        "Each item must have: document_id, error_type, description, confidence (0.0-1.0).\n\n"
-        f"TASK: {obs.task_description}\n"
-        f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n"
-        f"DOCUMENTS: {json.dumps(obs.documents)[:9000]}\n\n"
-        "Output ONLY the JSON array. No explanation."
+        "You are a financial auditor. Identify errors in the documents below.\n"
+        "Output ONLY a valid JSON array. Each object must have exactly these fields:\n"
+        '  {"document_id": "<MUST be from VALID IDs list>", "error_type": "<from ALLOWED list>", '
+        '"description": "<brief reason>", "confidence": <0.0-1.0>}\n\n'
+        f"TASK: {obs.task_description}\n\n"
+        f"VALID DOCUMENT IDs (use ONLY these exact strings): {json.dumps(doc_ids)}\n\n"
+        f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n\n"
+        f"DOCUMENTS:\n{json.dumps(obs.documents)[:7000]}\n\n"
+        "Output the JSON array only. If no errors, output []. No explanation text."
     )
     return [{"role": "user", "content": content}]
 
@@ -177,15 +186,48 @@ for tid in TASK_IDS:
 train_dataset = Dataset.from_list(train_rows)
 print(f"  Dataset: {len(train_dataset)} prompts")
 
-# Reward function
+# Reward function — shaped to create variance within GRPO groups.
+# Reward ladder:
+#   0.01  — no JSON attempt at all
+#   0.04  — valid JSON structure but 0 findings parsed
+#   0.06  — findings parsed, 0 doc matches (model tried but wrong IDs)
+#   0.08+ — partial doc matches (right doc, wrong error type)
+#   evaluator score — any true positives (partial_credit_f1, range 0.09–0.99)
+_reward_debug_n = 0
+
 def reward_fn(completions, task_id, seed, **kwargs):
+    global _reward_debug_n
+    import re as _re
     rewards = []
     for comp, tid, s in zip(completions, task_id, seed):
         try:
             findings = parse_findings_from_text(comp)
+
+            # Debug: log first 8 reward calls to verify output format
+            if _reward_debug_n < 8:
+                print(f"\n[REWARD {_reward_debug_n}] tid={tid} s={s} "
+                      f"parsed={len(findings)} comp[:300]={comp[:300]!r}")
+                _reward_debug_n += 1
+
+            if not findings:
+                has_json = bool(_re.search(r'\[\s*\{', comp))
+                rewards.append(0.04 if has_json else 0.01)
+                continue
+
             result = evaluator.evaluate(tid, int(s), findings)
-            rewards.append(float(result["score"]))
-        except Exception:
+            score = float(result["score"])
+            tp   = result.get("true_positives", 0)
+            pm   = result.get("partial_matches", 0)
+
+            # Lift floor: any parsed output scores above 0.01
+            if score <= 0.01:
+                if pm > 0:
+                    score = min(0.08 + pm * 0.02, 0.15)  # partial doc hit
+                else:
+                    score = 0.06  # parsed but no doc match
+            rewards.append(score)
+        except Exception as e:
+            print(f"[REWARD ERROR] {e}")
             rewards.append(0.01)
     return rewards
 
