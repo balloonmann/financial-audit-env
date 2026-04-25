@@ -75,9 +75,10 @@ def build_prompt(task_id, seed):
     # Extract all document IDs explicitly so model can't invent wrong ones
     doc_ids = []
     for doc in obs.documents:
-        did = doc.get("document_id") or doc.get("id") or doc.get("doc_id")
-        if did:
-            doc_ids.append(str(did))
+        if isinstance(doc, dict):
+            did = doc.get("document_id") or doc.get("id") or doc.get("doc_id")
+            if did:
+                doc_ids.append(str(did))
     content = (
         "You are a financial auditor. Identify errors in the documents below.\n"
         "Output ONLY a valid JSON array. Each object must have exactly these fields:\n"
