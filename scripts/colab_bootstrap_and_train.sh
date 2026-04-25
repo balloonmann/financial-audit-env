@@ -10,6 +10,7 @@ python -m pip install --upgrade pip
 echo "[3/6] Installing training dependencies"
 pip install -r requirements-training.txt
 pip install --no-deps mergekit==0.1.4
+pip install immutables scipy
 pip uninstall -y torchaudio || true
 python -m pip check || true
 

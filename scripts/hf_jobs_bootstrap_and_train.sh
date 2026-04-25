@@ -13,6 +13,7 @@ python -m pip install -e .
 echo "[4/6] Installing pinned training dependencies"
 python -m pip install -r requirements-training.txt
 python -m pip install --no-deps mergekit==0.1.4
+python -m pip install immutables scipy
 python -m pip uninstall -y torchaudio || true
 python -m pip check || true
 

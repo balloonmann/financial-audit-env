@@ -19,6 +19,8 @@ protobuf
 tyro
 msgspec
 hf_transfer
+immutables
+scipy
 
 # Project tooling used in training/eval scripts.
 pytest
