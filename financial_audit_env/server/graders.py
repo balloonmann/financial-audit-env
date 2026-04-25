@@ -165,9 +165,9 @@ def compute_f1_score(
         weighted_f1 = 0.01
 
     # --- Partial Credit Score ---
-    partial_credit_value = len(partial_matches) * 0.25
+    partial_credit_value = len(partial_matches) * 0.40
     effective_tp = true_positives + partial_credit_value
-    effective_fp = len(false_positive_list) + len(partial_matches) * 0.75
+    effective_fp = len(false_positive_list) + len(partial_matches) * 0.60
 
     if effective_tp + effective_fp > 0:
         pc_precision = effective_tp / (effective_tp + effective_fp)
@@ -235,7 +235,8 @@ def compute_f1_score(
 
     return {
         # Keep public score-like outputs in a bounded open interval.
-        "score": strict_round_clamp(f1, 2),
+        # Uses partial_credit_f1 as primary score to reward right-document finds.
+        "score": strict_round_clamp(partial_credit_f1, 2),
         "precision": strict_round_clamp(precision, 2),
         "recall": strict_round_clamp(recall, 2),
         "weighted_score": strict_round_clamp(weighted_f1, 2),
@@ -428,7 +429,7 @@ def compute_step_reward(
     # Note: uses raw precision/recall (not clamped) for threshold comparisons
     if is_final:
         result = compute_f1_score(all_findings_so_far, ground_truth)
-        if result["recall"] >= 0.8:
+        if result["recall"] >= 0.6:
             reward += 0.30
         if result["precision"] >= 0.9:
             reward += 0.10
