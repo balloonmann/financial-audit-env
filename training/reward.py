@@ -14,6 +14,9 @@ from .evaluator import InProcessEvaluator
 _evaluator = InProcessEvaluator()
 
 
+_OBJECT_RE = re.compile(r"\{[^{}]*\}")
+
+
 def parse_findings_from_text(text: str) -> List[Dict[str, Any]]:
     """
     Parse model-generated findings from free text.
@@ -28,26 +31,68 @@ def parse_findings_from_text(text: str) -> List[Dict[str, Any]]:
     if not text or not isinstance(text, str):
         return []
 
+    def _coerce_findings(parsed: Any) -> List[Dict[str, Any]]:
+        if not isinstance(parsed, list) or len(parsed) == 0:
+            return []
+        valid: List[Dict[str, Any]] = []
+        for item in parsed:
+            if isinstance(item, dict) and "document_id" in item and "error_type" in item:
+                confidence = item.get("confidence")
+                try:
+                    confidence_value = float(confidence) if confidence is not None else None
+                except (TypeError, ValueError):
+                    confidence_value = None
+                valid.append({
+                    "document_id": str(item["document_id"]).strip(),
+                    "error_type": str(item["error_type"]).strip().lower(),
+                    "description": str(item.get("description", "Finding")).strip(),
+                    "confidence": confidence_value,
+                })
+        return valid
+
+    def _try_parse_json_fragment(fragment: str) -> List[Dict[str, Any]]:
+        fragment = fragment.strip()
+        if not fragment:
+            return []
+        try:
+            parsed = json.loads(fragment)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+        return _coerce_findings(parsed)
+
     # Try JSON first — look for array in the text
     try:
-        json_match = re.search(r"\[.*\]", text, re.DOTALL)
+        json_match = re.search(r"\[.*?\]", text, re.DOTALL)
         if json_match:
-            parsed = json.loads(json_match.group())
-            if isinstance(parsed, list) and len(parsed) > 0:
-                # Validate minimum fields
-                valid = []
-                for item in parsed:
-                    if isinstance(item, dict) and "document_id" in item and "error_type" in item:
-                        valid.append({
-                            "document_id": str(item["document_id"]).strip(),
-                            "error_type": str(item["error_type"]).strip().lower(),
-                            "description": str(item.get("description", "Finding")).strip(),
-                            "confidence": float(item["confidence"]) if "confidence" in item else None,
-                        })
-                if valid:
-                    return valid
+            valid = _try_parse_json_fragment(json_match.group())
+            if valid:
+                return valid
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
+
+    # Fallback for truncated arrays or slightly malformed JSON:
+    # salvage any complete object blocks we can recover from the text.
+    salvaged: List[Dict[str, Any]] = []
+    seen = set()
+    for obj_text in _OBJECT_RE.findall(text):
+        # Accept either a full object or a fragment that becomes valid once wrapped.
+        parsed_candidates = [
+            _try_parse_json_fragment(obj_text),
+            _try_parse_json_fragment(f"[{obj_text}]"),
+        ]
+        for candidate in parsed_candidates:
+            for item in candidate:
+                key = (
+                    item.get("document_id"),
+                    item.get("error_type"),
+                    item.get("description"),
+                )
+                if key not in seen:
+                    seen.add(key)
+                    salvaged.append(item)
+
+    if salvaged:
+        return salvaged
 
     # Fallback: regex-based parsing for free-text output
     findings = []

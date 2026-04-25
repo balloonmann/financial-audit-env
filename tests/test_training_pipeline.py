@@ -17,6 +17,23 @@ def test_parse_findings_from_json_array():
     assert parsed[0]["confidence"] == 0.88
 
 
+def test_parse_findings_from_truncated_json_array_salvages_complete_objects():
+    text = (
+        '[{"document_id": "INV-001", "error_type": "price_mismatch", '
+        '"description": "Unit price mismatch", "confidence": 1.0}, '
+        '{"document_id": "INV-002", "error_type": "quantity_mismatch", '
+        '"description": "Quantity mismatch", "confidence": 0.8}, '
+        '{"document_id": "INV-003", "error_type": "cascading_total", '
+        '"description": "Total mismatch"'
+    )
+
+    parsed = parse_findings_from_text(text)
+
+    assert len(parsed) == 2
+    assert parsed[0]["document_id"] == "INV-001"
+    assert parsed[1]["document_id"] == "INV-002"
+
+
 def test_parse_findings_from_free_text_block():
     text = (
         "document_id: INV-101\n"
