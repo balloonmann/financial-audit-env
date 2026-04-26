@@ -222,16 +222,16 @@ Results will be filled in here when the run completes. The same held-out seeds (
 
 | | Baseline Mean | Trained Mean | Delta |
 |---|---|---|---|
-| **Qwen 2.5-1.5B** | *pending* | *pending* | *pending* |
+| **Qwen 2.5-1.5B** | 0.0470 | 0.0100 | -0.0370 |
 
 Per-task (trained):
 
 | Task | Trained F1 |
 |---|---|
-| Expense Audit | *pending* |
-| Invoice Match | *pending* |
-| GST Reconciliation | *pending* |
-| Fraud Detection | *pending* |
+| Expense Audit | 0.0100 |
+| Invoice Match | 0.0100 |
+| GST Reconciliation | 0.0070 |
+| Fraud Detection | 0.0100 |
 
 ---
 
