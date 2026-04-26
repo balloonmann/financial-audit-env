@@ -24,7 +24,7 @@ If I could train an agent to operate correctly across a dynamic, multi-period au
 
 ---
 
-## Campaign Walkthrough: Five Periods of World Mutation
+## Campaign Walkthrough: Periods of World Mutation
 
 **Act 1 — The Baseline.** Period 1. The agent receives 19 expense claims and a policy doc. Stable rules, no surprises. The untrained Llama 3.1 8B scores F1 ≈ 0.12 — casting a wide net, flagging everything, right about 12% of the time.
 
@@ -43,12 +43,6 @@ A good environment doesn't hide training problems. It surfaces them so cleanly t
 The Meta PyTorch OpenEnv Hackathon (India, April 2026) asked teams to build RL environments for LLM training and demonstrate genuine behavioral improvement. This submission sits squarely under **Theme #3: World Modeling**, specifically **#3.1 Professional Tasks**.
 
 The theme description asks for environments where "the model is expected to do real hard work instead of exploiting shortcuts," requiring agents to "maintain consistent internal state, update beliefs based on outcomes, and orchestrate multi-step workflows" — with the goal of strengthening "causal reasoning and persistent world models." Financial auditing is one of the cleanest fits for that brief: it's an enterprise workflow with explicit rules, partially observable state (each specialist only sees their domain's documents), and a world that changes mid-task.
-
-**Judging criteria:**
-- Environment Innovation — 40%
-- Storytelling & Presentation — 30%
-- Showing Improvement in Rewards — 20%
-- Reward and Training Pipeline — 10%
 
 **Why this project fits #3.1:**
 
@@ -79,7 +73,7 @@ The error taxonomy is where a lot of my design work went. It's easy to plant sim
 
 Red herrings are planted deliberately. The baseline model hallucinates false positives on these, which hits precision hard.
 
-### The Campaign Loop: Five Periods of World Mutation
+### The Campaign Loop: Periods of World Mutation
 
 Each training run is a five-period campaign. Between periods, the world mutates:
 
@@ -173,7 +167,7 @@ The Llama run was submitted to HuggingFace Jobs and executed on an A10-Large GPU
 - Base model: `meta-llama/Llama-3.1-8B-Instruct`
 - LoRA rank: 16, alpha: 16, dropout: 0
 - Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`
-- Training epochs: 1
+- Training epochs: 3
 - Batch size: 2, generations per prompt: 4
 - Learning rate: 5e-6
 - Max sequence length: 4096
