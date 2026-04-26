@@ -13,15 +13,10 @@ tags: [openenv]
 
 An OpenEnv-compatible reinforcement learning environment for training AI agents to audit financial documents through **multi-agent cooperation**, **regulatory adaptation**, and **self-improvement**. Built for the [Meta PyTorch Hackathon — Round 2](https://www.scaler.com/school-of-technology/meta-pytorch-hackathon).
 
-**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **100+ tests passing** · **Theme: Multi-Agent Interactions × Scalable Oversight**
+**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · **Theme: #3 World Modeling — #3.1 Professional Tasks**
 
-Core strategy docs:
-- [Hackathon Core Idea](HACKATHON_CORE_IDEA.md)
-- [Testing and Training Execution Plan](HACKATHON_TESTING_TRAINING_PLAN.md)
-- [Training Quickstart](TRAINING_QUICKSTART.md)
-
-Automation:
-- Demo runner artifact script: [scripts/run_hackathon_demo.py](scripts/run_hackathon_demo.py)
+- Blog post: [BLOG.md](BLOG.md)
+- Training notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
 - CI quality gate: [.github/workflows/ci.yml](.github/workflows/ci.yml)
 
 ---
@@ -34,27 +29,20 @@ This section is the single source of truth for all links judges need.
 
 - GitHub Repository: https://github.com/balloonmann/financial-audit-env
 - Hugging Face Space (Environment URL): https://balloonmann-financial-audit-env.hf.space
-- Colab Notebook (Training Repro): `TODO - add shareable Colab URL for final_lwo_vram_training_updated.ipynb`
-- Hugging Face Blog / YouTube (<2 min) / Slide Deck: `TODO - add final storytelling URL`
+- Training Notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
+- Blog Post: [BLOG.md](BLOG.md)
+- GRPO Adapter (HF Hub): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
+- Eval Artifacts: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
 
-### Training Evidence (Required)
+### Submission Checklist
 
-- Baseline vs Trained table on held-out seeds: `PENDING FINAL (Llama baseline vs Llama+adapter)`
-- Iteration 1 baseline artifacts (Qwen 1.5B interim): https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
-- Adapter artifact (from low-vram training run): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
-- Baseline plot currently available: `baseline_score_heldout.png` (in eval artifacts dataset)
-- Optional W&B run link: `TODO - add if used`
-
-### Competition-Day Submission Checklist
-
-- [x] OpenEnv-compatible environment implemented and hosted on HF Space.
-- [x] `openenv.yaml` present and valid.
-- [x] Minimal Unsloth + TRL training script implemented for Colab flow.
-- [x] Iteration 1 baseline artifacts generated and uploaded.
-- [ ] Colab notebook link added and publicly accessible.
-- [ ] Storytelling artifact link added (HF blog or video or slides).
-- [ ] Training-improvement evidence embedded in README with captions.
-- [ ] All submission links verified publicly accessible.
+- [x] OpenEnv-compatible environment hosted on HF Space
+- [x] `openenv.yaml` present and valid
+- [x] Training notebook (Unsloth + TRL GRPO) — `training/GRPO_Training_Submission.ipynb`
+- [x] Blog post with results — `BLOG.md`
+- [x] Adapter artifact uploaded to HF Hub
+- [x] Eval artifacts (baseline + trained CSVs) on HF datasets
+- [x] Training results embedded in README with plots
 
 ### How This README Maps to Judging Criteria
 
@@ -254,42 +242,51 @@ python training/train_grpo.py
 
 ---
 
-### Final Training Results (To Fill on Competition Day)
+### Training Results — Held-Out Seeds 100–104
 
-Add final metrics here after GPU-backed run with credits.
+#### Llama 3.1 8B — HuggingFace Jobs (A10-Large GPU)
 
-| Split | Task | Baseline Score | Trained Score | Delta |
-|------|------|----------------|---------------|-------|
-| Held-out (100-104) | expense_audit | TODO | TODO | TODO |
-| Held-out (100-104) | invoice_match | TODO | TODO | TODO |
-| Held-out (100-104) | gst_reconciliation | TODO | TODO | TODO |
-| Held-out (100-104) | fraud_detection | TODO | TODO | TODO |
+| | Mean Score |
+|---|---|
+| Baseline | 0.1690 |
+| GRPO Trained | 0.1230 |
+| Delta | -0.0460 (-27.2%) |
 
-### Iteration 1 Interim Baseline (Qwen 1.5B)
+| Task | Difficulty | Baseline F1 | Trained F1 | Delta |
+|---|---|---|---|---|
+| expense_audit | Easy | ~0.12 | **0.356** | +196% |
+| invoice_match | Medium | ~0.18 | 0.074 | -59% |
+| gst_reconciliation | Hard | ~0.01 | 0.042 | +320% |
+| fraud_detection | Expert | ~0.11 | 0.020 | -82% |
 
-This is an interim baseline pass used to validate evaluation plumbing and artifact export on constrained T4 memory. Final submission comparison will use Llama baseline vs Llama+adapter.
+Expense audit improved dramatically after GRPO. Fraud detection collapsed — the optimizer chased the densest reward signal. See [BLOG.md](BLOG.md) for the full analysis.
 
-| task_id | score | weighted_score | precision | recall |
-|---------|-------|----------------|-----------|--------|
-| expense_audit | 0.01 | 0.01 | 0.01 | 0.01 |
-| fraud_detection | 0.01 | 0.01 | 0.01 | 0.01 |
-| gst_reconciliation | 0.01 | 0.01 | 0.01 | 0.01 |
-| invoice_match | 0.01 | 0.01 | 0.01 | 0.01 |
+#### Qwen 2.5-1.5B — Google Colab (T4)
 
-Iteration 1 artifact links:
+| | Mean Score |
+|---|---|
+| Baseline | 0.0470 |
+| GRPO Trained | 0.0100 |
+| Delta | -0.0370 (-78.7%) |
 
-- Eval artifacts dataset: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
-- Adapter artifact repo: https://huggingface.co/balloonmann/financial-audit-grpo-adapter
-- Local Colab artifact paths used:
-  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_heldout.csv`
-  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_summary.csv`
-  - `/content/drive/MyDrive/financial-audit-artifacts/eval/baseline_score_heldout.png`
+| Task | Baseline F1 | Trained F1 |
+|---|---|---|
+| expense_audit | 0.026 | 0.010 |
+| invoice_match | 0.122 | 0.010 |
+| gst_reconciliation | 0.018 | 0.007 |
+| fraud_detection | 0.022 | 0.010 |
 
-Planned evidence inserts:
+At 1.5B parameters quantized to 4-bit, the model collapses to floor on all tasks after training — insufficient capacity to absorb the GRPO policy changes while maintaining valid output format.
 
-- `TODO`: reward curve plot image path (with one-line caption)
-- `TODO`: loss curve plot image path (with one-line caption)
-- `TODO`: baseline-vs-trained comparison plot image path
+#### Comparison Plot
+
+![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](results/training_comparison.png)
+
+*Left: F1 score per task. Right: Recall per task. Orange = GRPO trained, Blue = baseline. Evaluated on held-out seeds 100–104.*
+
+Artifact links:
+- Eval CSVs: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
+- Adapter: https://huggingface.co/balloonmann/financial-audit-grpo-adapter
 
 ---
 
@@ -390,26 +387,15 @@ pip install -e .
 # 2) Start environment server
 python -m financial_audit_env.server.app
 
-# 3) In a new terminal: run smoke checks
-python verify_r2_score.py
-
-# 4) Run full deterministic verification suite
-python verify_full.py
-
-# 5) Run all tests
+# 3) In a new terminal: run all tests
 python -m pytest tests -q
 
-# 6) Run campaign inference flow
+# 4) Run campaign inference flow
 python inference.py --env-url http://localhost:8000 --campaign --seed 42
+
+# 5) Hit the live Space directly
+curl https://balloonmann-financial-audit-env.hf.space/health
 ```
-
-### Submission Artifacts Checklist (To Fill Tomorrow)
-
-- [ ] Add `Baseline vs Trained` held-out metrics table (seeds 100-104).
-- [ ] Add reward/loss and comparison plots (`.png` or `.jpg`) to repo.
-- [ ] Add HF blog post link OR `<2 min` YouTube link OR short slide deck link.
-- [ ] Add links in one README section: HF Space, HF model adapter, artifact post/video/deck.
-- [ ] Confirm all links are public and accessible without extra permissions.
 
 ---
 
