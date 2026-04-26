@@ -1,0 +1,256 @@
+# Teaching a Language Model to Actually Do a Financial Audit
+
+*Meta PyTorch OpenEnv Hackathon — April 2026 | Round 2 Submission*
+
+---
+
+There's a version of the "AI for finance" pitch that gets told at a lot of conferences. A model reads a spreadsheet, surfaces a few anomalies, everyone nods approvingly. It's a clean story. It also has almost nothing to do with how financial auditing actually works.
+
+Real audit seasons don't look like that. They look like three systems with conflicting data, a GST rate that changed mid-quarter, a vendor that got flagged for due diligence after two transactions already cleared, and a junior auditor trying to reconcile 45 book entries against a GSTR-2B that inexplicably has 44. The problems aren't in the data. They're in the relationship between the data and a set of rules that are themselves moving.
+
+That gap — between what AI demos show and what audit work actually requires — is what this project is about.
+
+---
+
+## The Problem Worth Solving
+
+Most LLM audit demos are effectively retrieval tasks. Given clean, static documents, find the thing that violates the rule. That's a useful capability, but it's not auditing. Auditing is adversarial, multi-period, and policy-sensitive. The ground truth shifts because policy shifts. An expense that was compliant in Period 1 gets flagged in Period 3 because a new approval threshold dropped mid-campaign. An invoice that matched perfectly at submission now shows a quantity discrepancy when the goods receipt note gets updated.
+
+The AI systems that exist for this space are almost universally document-to-insight pipelines — they read, they extract, they flag. None of them model what happens when the rules change while you're mid-audit.
+
+That's the problem I wanted to build an environment around.
+
+If you can train an agent to operate correctly across a dynamic, multi-period audit campaign — adapting to regulatory shocks, coordinating with specialist peers, maintaining a review trail that holds up to oversight scrutiny — you've built something that's actually useful. Not demo-useful. Actually useful.
+
+---
+
+## Hackathon Context and Theme Alignment
+
+The Meta PyTorch OpenEnv Hackathon challenges teams to build RL environments for LLM training using the OpenEnv framework and demonstrate genuine behavioral improvement through reinforcement learning. Round 2 specifically asked for more architecturally sophisticated submissions — multi-agent structure, campaign mechanics, and operational complexity beyond a single-task loop.
+
+**Judging criteria:**
+- Environment Innovation — 40%
+- Storytelling and domain framing — 30%
+- Demonstrated reward improvement — 20%
+- Training pipeline quality — 10%
+
+The themes I targeted:
+
+**RLVE (Reinforcement Learning with Verifiable Environments):** Every reward signal in this environment is computed deterministically. There is no LLM-as-judge, no learned reward model, no human annotation in the loop. The ground truth is planted at environment generation time. A finding is correct or it isn't. That makes the reward trustworthy — which, as the hackathon FAQ puts it, means optimization pressure is working toward the thing you actually meant, not a proxy.
+
+**Multi-agent coordination:** Four specialist agents — expense, invoice, GST, fraud — each responsible for a distinct audit domain, running in dependency order per fiscal period. An overseer layer reviews, approves, rejects, escalates, and resolves conflicts between specialists. This isn't decoration. It changes the reward structure significantly.
+
+**Adaptive, evolving environments:** The environment mutates across five fiscal periods: policies update, schema fields rename, vendor risk profiles shift, tax rates change. Three mid-campaign regulatory shocks drop at predetermined steps, requiring live adaptation rather than pattern recall.
+
+---
+
+## Architecture: A Multi-Agent Financial Audit Control Tower
+
+### The Specialist Swarm
+
+The core of the environment is four auditing agents, each trained on a different class of financial error:
+
+| Agent | Task | Documents | Planted Errors | Difficulty |
+|---|---|---|---|---|
+| Expense Specialist | Expense policy violations | 19 expense records | 7 errors | Easy |
+| Invoice Specialist | Three-way matching | 10 POs + 10 GRNs + 12 invoices | 9 discrepancies | Medium |
+| GST Specialist | Tax reconciliation | 45 book entries + 44 GSTR-2B | 12 mismatches | Hard |
+| Fraud Specialist | Pattern detection | 84 transactions + 26 vendors | 10 fraud patterns | Expert |
+
+Each specialist runs for up to 5 steps per period before submitting final findings. The dependency order matters: the GST agent can only run after invoice matching is complete, and the fraud agent draws on prior task findings for its cross-task pattern signals.
+
+The error taxonomy is where a lot of the design work went. It's easy to plant simple errors. It's harder to plant errors that are realistic — the kind an actual auditor would catch and a language model would plausibly miss. Expense violations include `cumulative_breach` (spread across multiple records individually within limit), `unapproved_vendor` (vendor not on approved list), and `duplicate_claim` (same receipt filed twice with minor field differences). Fraud errors include `round_tripping` (funds leaving and returning through related entities), `ghost_employee` (payroll entries with no corresponding HR record), and `collusion_pattern` (split invoices just below approval thresholds across the same vendor).
+
+Red herrings are planted deliberately. The baseline model hallucinates false positives on these, which hits precision hard.
+
+### The Campaign Loop: Five Periods of World Mutation
+
+Each training run is a five-period campaign. Between periods, the world mutates:
+
+- Fiscal period advances, policy versions increment
+- Schema fields rename (e.g. `vendor_id` becomes `supplier_ref` in a later period)
+- Vendor risk statuses update — a previously clean vendor gets flagged
+- Tax rates shift with regulatory shocks
+
+Three specific shocks are baked in at fixed steps:
+
+- **REG-001 (Period 3, Step 3):** GST rate for IT services drops from 18% to 12%. Any prior GST reconciliation that assumed 18% is now wrong.
+- **REG-002 (Period 4, Step 1):** Cash transaction reporting threshold tightens from ₹50,000 to ₹30,000. A transaction that was compliant is now a violation.
+- **REG-003 (Period 4, Step 2):** A specific vendor category gets flagged for enhanced due diligence. The fraud specialist needs to reassess.
+
+The point of the shocks isn't to be adversarial for its own sake. It's to test whether the agent is actually reasoning about policy or has memorized a surface pattern. A model that's memorized "flag anything above ₹50,000" will fail REG-002 in the wrong direction — suddenly over-flagging instead of adapting.
+
+### The Overseer Layer
+
+After all four specialists submit their findings for a period, an overseer agent reviews the combined output. It can approve findings, reject them with reasons, escalate high-value issues, and resolve conflicts where two specialists have flagged the same document differently.
+
+The overseer's decisions feed into the campaign score as a separate component. This is intentional — it creates an accountability structure. A specialist that fires wildly and generates many false positives gets corrected by the overseer, and that correction history is tracked. Over-generation isn't rewarded.
+
+### Self-Improvement Gate
+
+The environment includes a self-improvement mechanism with a strict anti-regression gate. A candidate policy update is accepted only if:
+- `train_delta > 0.005` (measurable improvement on training seeds)
+- `transfer_delta > -0.002` (no meaningful degradation on held-out seeds)
+- `safety_regression == false` (no new critical misses introduced)
+
+This matters because reward hacking is real. A model can learn to flood the environment with findings, boosting recall at the cost of precision. The gate catches this: if precision has collapsed on the transfer set, the update gets rejected.
+
+---
+
+## Reward Engineering: Getting the Signal Right
+
+This is the part where most RL environments fall apart, so I'll be specific about the choices.
+
+### Partial Credit F1
+
+A pure binary hit/miss reward for financial findings would be too sparse to learn from. A finding on the right document with the wrong error type still carries information — the model identified the problematic record, it just mis-classified the violation.
+
+The grader gives partial credit at 0.40 for this case (right `document_id`, wrong `error_type`). Full credit requires both correct. This was calibrated deliberately — 0.40 is enough to provide gradient signal during early training without rewarding sloppy classification.
+
+### Severity Weighting
+
+Not all errors are equal. A `ghost_employee` pattern has higher financial exposure than a `weekend_expense` violation. The weighted F1 component reflects this:
+
+- Fraud-class errors: 2.0× weight
+- Compliance-critical errors: 1.5× weight
+- Procedural violations: 0.5× weight
+
+This creates a meaningful distinction between a model that catches high-value fraud and one that only catches low-stakes policy technicalities.
+
+### Step-Level Reward Shaping
+
+Each step in a task episode returns an intermediate reward:
+
+```
++0.15  per new true positive (severity-weighted)
++0.04  per partial match
+-0.05  per false positive
+-0.02  step penalty
+-0.005 × step_number  (decay to discourage padding)
++0.30  final bonus if recall ≥ 0.6
+-0.20  final penalty if recall < 0.3
+```
+
+The step decay is important. Without it, a model learns to submit at step 5 regardless of whether it has anything new to add. The decay creates pressure to submit when findings are ready, not when the timer runs out.
+
+### Anti-Gaming Guards
+
+The campaign-level scorer has hard floors to prevent narrow optimization:
+
+- Any specialist with weighted F1 < 0.20 collapses the full campaign score to 0.01
+- Any critical error missed (severity ≥ 1.5) applies a 0.5× penalty to the campaign score
+- Bonus components are capped at 30% of total score
+
+The 0.01 floor is worth explaining. Without it, a model could learn to ace the expense audit (easy, lots of gradient signal) while completely ignoring GST reconciliation (hard, sparse signal). The floor forces breadth. You can't win by specializing in the easy task.
+
+---
+
+## Training Pipeline: GRPO on a Free T4
+
+The training script runs on Google Colab's free T4 GPU using Unsloth's 4-bit quantized Llama 3.1 8B.
+
+**Configuration:**
+- Base model: `unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit`
+- LoRA rank: 16, alpha: 16, dropout: 0
+- Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`
+- Training epochs: 1
+- Batch size: 2, generations per prompt: 4
+- Learning rate: 5e-6
+- Max sequence length: 4096
+
+**Seed separation:**
+- Training: seeds 42–51 (10 seeds × 4 tasks = 40 prompts)
+- Held-out evaluation: seeds 100–104 (5 seeds, never seen during training)
+
+The held-out seeds are the honest evaluation. A model that has memorized training scenarios can look arbitrarily good on them. Seeds 100–104 test whether the training actually produced a policy that generalizes.
+
+The reward function during training goes through an `InProcessEvaluator` — a direct Python wrapper around the environment's grader that skips the HTTP layer entirely. This matters for training speed. Each GRPO rollout needs a reward signal; if that requires an HTTP round-trip to a running server, you're bottlenecked on network latency, not GPU computation.
+
+**Parser robustness:**
+
+The reward pipeline also had to handle malformed model outputs gracefully. The model doesn't always emit clean JSON. The parser tries, in order:
+1. Direct JSON array extraction
+2. Salvage of complete objects from partial JSON
+3. Regex-based free-text parsing for `document_id`, `error_type`, and `confidence` fields
+
+If all three fail, the output scores 0.01 (the floor). This is important — silently returning 0 for a parse failure would produce misleading training signal that conflates "bad reasoning" with "bad formatting."
+
+---
+
+## Results
+
+### Llama 3.1 8B Baseline (No Training, Seed 42)
+
+This is the unmodified model's performance against the environment:
+
+| Task | Difficulty | F1 Score | Precision | Recall |
+|---|---|---|---|---|
+| Expense Audit | Easy | 0.12 | 0.07 | 0.43 |
+| Invoice Match | Medium | 0.18 | 0.11 | 0.44 |
+| GST Reconciliation | Hard | 0.01 | 0.01 | 0.01 |
+| Fraud Detection | Expert | 0.11 | 0.11 | 0.10 |
+
+A few things stand out here. Recall is much better than precision on the easier tasks — the model is casting a wide net, flagging many things, but a large fraction are false positives (red herrings doing their job). GST reconciliation is essentially floor performance; the model doesn't have the tax calculation reasoning to reliably spot rate mismatches and timing differences. Fraud detection is better than you might expect, but that's because some fraud patterns (`duplicate_payment`, `round_tripping`) leave surface-level textual signals the model can pick up without truly reasoning about the transaction graph.
+
+The precision collapse is the clearest signal that the baseline needs training. F1 of 0.07 on expense audit means the model is right about 7% of the time when it flags something. In a real audit context, that would generate so much noise it would be useless.
+
+### After GRPO Training (Llama 3.1 8B + LoRA Adapter, Held-Out Seeds 100–104)
+
+*Training run in progress — results will be updated here when the Colab run completes.*
+
+| Task | Baseline F1 | Trained F1 | Delta |
+|---|---|---|---|
+| Expense Audit | 0.12 | *pending* | — |
+| Invoice Match | 0.18 | *pending* | — |
+| GST Reconciliation | 0.01 | *pending* | — |
+| Fraud Detection | 0.11 | *pending* | — |
+
+The adapter is available at: [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
+
+### Qwen — Training in Progress
+
+A Qwen baseline and GRPO fine-tuned run are also underway. Results and comparison against Llama will be added here once the run completes. The same held-out seed set (100–104) will be used for apples-to-apples comparison.
+
+---
+
+## What Went Wrong (And Why That's Useful)
+
+**The GST floor problem.** GST reconciliation was always going to be the hardest task, but I underestimated how badly a pretrained model would perform on it. The task requires date-specific tax rate lookup, cumulative credit tracking, and timing difference reasoning — none of which a general-purpose instruct model has in any reliable form. The RL training loop faces a cold-start problem: if the baseline almost never finds a true positive, the reward signal is effectively zero and GRPO has nothing to update toward. The mitigation was keeping the partial credit signal (0.40 for right document) to create at least some gradient. Whether that's enough will show in the trained scores.
+
+**Parser brittleness with truncated completions.** The 4-bit quantized model running on a T4 will sometimes hit the `max_completion_tokens` limit mid-JSON. An incomplete JSON array gets a score of 0.01, which is the correct behavior, but it adds noise to training. The salvage parser catches some of these — it can reconstruct complete findings objects from a truncated array — but not all. In retrospect, the prompt engineering could have been more explicit about front-loading high-confidence findings first.
+
+**Red herring false positives.** The baseline's precision collapse is almost entirely driven by red herrings. The environment plants plausible-looking non-violations — a high meal expense that's just under the limit, a weekend transaction that actually had prior approval. The model flags these aggressively. Training should push the model toward reading the policy conditions more carefully before flagging, but this is a harder behavior to shape than pure recall.
+
+---
+
+## What Surprised Me
+
+The overseer component turned out to be more useful as a training signal than I expected. Initially I built it as a governance layer — something to make the submission more architecturally complete. But the overseer's precision on conflict resolution turns out to be a meaningful differentiator between a model that understands the audit rules and one that's just pattern-matching. Two specialists flagging the same document with different error types is a signal worth distinguishing from two specialists independently flagging different errors on the same vendor. The overseer layer forces the model to handle that distinction explicitly.
+
+The regulatory shock timing also revealed something interesting about instruct model behavior. REG-001 (the GST rate change) drops at Period 3, Step 3 — mid-audit. The baseline model mostly ignores it. The prompt includes the updated rate, the model acknowledges it in its reasoning, and then continues flagging errors at the old rate. There's a well-known gap between "knowing a fact" and "updating behavior based on that fact" in instruct models. The RL loop should narrow that gap, because the reward directly penalizes any finding that assumes the old rate post-shock.
+
+The step-decay penalty worked better than expected. Early in testing without it, the model would almost always wait until step 5 to submit, regardless of when it had complete findings. Adding the `-0.005 × step_number` decay pushed submission timing earlier without requiring any explicit instruction. The model learned to submit when it was done, not when the clock ran out. That's a subtle but important behavior for a real auditing workflow.
+
+---
+
+## The Bigger Picture
+
+There's a temptation in RL research to reach for the most complex environment possible. More agents, more tasks, more shaping terms. The FAQ for this hackathon is blunt about why that goes wrong: conflicting reward signals create unstable training, over-shaped rewards change the optimal policy in unintended ways, and environments whose failure modes you don't understand are environments you can't safely optimize.
+
+Most of the design work here was about restraint. The anti-gaming guards exist because I built the environment and immediately tried to break the reward function myself. The 0.01 specialist floor exists because the first version of the campaign scorer produced a model that aced expense auditing and completely ignored fraud detection. The overseer layer has a precision component because a naive version would reward an overseer that approves everything. Every component in the reward function has a corresponding failure mode that I tested before putting it in front of an optimizer.
+
+The one-sentence version of what this project is: an RL environment for financial auditing that treats the reward function as the hardest problem, not the training algorithm.
+
+---
+
+## Links
+
+- **HuggingFace Space (live environment):** [balloonmann-financial-audit-env.hf.space](https://balloonmann-financial-audit-env.hf.space)
+- **GitHub Repository:** [github.com/balloonmann/financial-audit-env](https://github.com/balloonmann/financial-audit-env)
+- **GRPO Adapter (HF Hub):** [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
+- **Eval Artifacts:** [huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts](https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts)
+- **Training Notebook:** *(Colab link — to be added on competition day)*
+
+---
+
+*Built for the Meta PyTorch OpenEnv Hackathon, April 2026. The environment is fully open — judges can run the full test suite with `pytest` (108 tests, ~10 seconds) and interact with all 29 API endpoints live on the deployed HF Space.*
