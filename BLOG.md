@@ -24,6 +24,20 @@ If I could train an agent to operate correctly across a dynamic, multi-period au
 
 ---
 
+## The Story: What Actually Happens Across Five Periods
+
+**Act 1 — The Baseline.** Period 1. The agent receives 19 expense claims and a policy doc. Stable rules, no surprises. The untrained Llama 3.1 8B scores F1 ≈ 0.12 — casting a wide net, flagging everything, right about 12% of the time.
+
+**Act 2 — The World Mutates.** Period 2. Meal limit jumps ₹1,500 → ₹2,000. A new vendor onboards. Cross-period memory is now required. An agent that treats each period as a fresh prompt will start generating false positives on the new vendor and miss the updated limit. Baselines do exactly this.
+
+**Act 3 — The Regulatory Shock.** Period 3. Mid-audit, REG-001 drops: GST on IT services 18% → 12%. Schema drifts (`vendor_gstin` → `supplier_gstin`). Findings already submitted under the old rate are now wrong. Baseline models acknowledge the new rate in their reasoning and then proceed to flag errors at the old rate anyway. This is a known gap between knowing a fact and updating behavior on it — and RL is the right tool for closing it.
+
+**Act 4 — The Environment Reveals the Training Problem.** GRPO chases the densest reward signal. After training, Llama 3.1 8B improved **3× on expense audits** and **collapsed 82% on fraud detection**. The 0.20 F1 floor multiplier kicked in. The environment said *no, this isn't a win* — and made the curriculum bias obvious.
+
+A good environment doesn't hide training problems. It surfaces them so cleanly that the fix is obvious.
+
+---
+
 ## Hackathon Theme: #3 World Modeling — #3.1 Professional Tasks
 
 The Meta PyTorch OpenEnv Hackathon (India, April 2026) asked teams to build RL environments for LLM training and demonstrate genuine behavioral improvement. This submission sits squarely under **Theme #3: World Modeling**, specifically **#3.1 Professional Tasks**.
@@ -214,6 +228,8 @@ This is exactly the failure mode the anti-gaming guard was designed to catch, wh
 
 ![Baseline vs GRPO Trained — F1 and Recall per task (Llama 3.1 8B, held-out seeds 100–104)](results/llama_before_after_comparison.png)
 
+![Baseline vs GRPO Trained — F1 and Recall per task (Llama 3.1 8B, held-out seeds 100–104)](results/llama_before_after_comparison.png)
+
 The adapter is available at: [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
 
 ### Qwen 2.5-1.5B — Google Colab (T4)
@@ -233,7 +249,11 @@ Per-task (trained):
 | GST Reconciliation | 0.0070 |
 | Fraud Detection | 0.0100 |
 
-**Qwen Analysis:** At 1.5B parameters with aggressive 4-bit quantization, the model lacked sufficient capacity to maintain state across the 5-period campaign structure. This result validates an important finding: smaller models struggle with multi-period task dependencies, and future training should use intermediate model sizes (3.5B–7B) on more capable hardware.
+The training curves tell the full story. Reward was flat at 0.01 for all 120 steps — `reward_std = 0` throughout, meaning every completion in every group scored identically. GRPO had nothing to differentiate. No gradient, no learning.
+
+![Qwen 2.5-1.5B GRPO training curves — reward, loss, KL, grad norm over 120 steps](results/qwen_grpo_training_curves.png)
+
+**Qwen Analysis:** At 1.5B parameters with aggressive 4-bit quantization, the model lacked sufficient capacity to produce even a single valid finding during training. This is the GRPO cold-start problem in its extreme form. Capacity matters more than data under aggressive quantization — the model needed to produce at least some true positives before GRPO had anything to reinforce.
 
 ---
 
@@ -448,6 +468,24 @@ Can an LLM maintain a consistent internal model of a financial world and update 
 - **RL researchers:** This is a challenging environment that reveals real problems with curriculum learning and reward shaping.
 - **Finance/audit teams:** This demonstrates where LLMs will struggle with your real workflows (regulatory adaptation, cross-period state, rule changes mid-process).
 - **LLM training practitioners:** The anti-gaming guards and multi-task structure offer patterns for avoiding common RL pitfalls.
+
+## What the Agent Learned (from reward signal alone)
+
+1. Submit findings as structured JSON — free-text gets parsed but loses precision.
+2. Prefer high-confidence claims on easy tasks; partial-credit weighting punishes hallucinated false positives.
+3. Weekend dates and missing receipts are dense, low-risk signals — the optimizer found them first.
+4. On the final step, abstaining beats guessing when recall < 0.3.
+5. Cross-period findings should be referenced, not re-derived — the reward structure rewards continuity.
+
+## What I Learned (from the agent's failures)
+
+1. **GRPO with a single scalar reward collapses onto whichever task has the densest signal.** This wasn't a hypothesis — it's what happened. Expense audit had 7 findable errors with clear textual signals. Fraud had 10 but required cross-transaction graph reasoning. The optimizer never got started on fraud.
+2. **A 0.20 specialist F1 floor isn't enough** if it only fires at campaign scoring time and not during per-step GRPO updates. The fix is per-task floors baked into the step reward, not the final evaluator.
+3. **The 4-bit Qwen 1.5B run confirmed that capacity matters more than data under aggressive quantization.** The model needed to produce at least one true positive before GRPO had anything to reinforce. It never did.
+4. **The 0.40 partial-credit weight is generous on easy tasks and stingy on fraud.** Task-specific partial-credit weights are the cleaner fix than a global constant.
+5. **Static evaluation seeds hide failure modes.** The training reward showed the model improving (on expense). Held-out seeds 100–104 revealed the curriculum bias the training signal never surfaced.
+
+---
 
 ## The Bigger Picture
 
