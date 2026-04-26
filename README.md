@@ -16,8 +16,7 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · **Theme: #3 World Modeling — #3.1 Professional Tasks**
 
 - Blog post: [BLOG.md](BLOG.md)
-- Training notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
-- CI quality gate: [.github/workflows/ci.yml](.github/workflows/ci.yml)
+- Training notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
@@ -29,7 +28,7 @@ This section is the single source of truth for all links judges need.
 
 - GitHub Repository: https://github.com/balloonmann/financial-audit-env
 - Hugging Face Space (Environment URL): https://balloonmann-financial-audit-env.hf.space
-- Training Notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
+- Training Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 - Blog Post: [BLOG.md](BLOG.md)
 - GRPO Adapter (HF Hub): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
 - Eval Artifacts: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
@@ -280,7 +279,7 @@ At 1.5B parameters quantized to 4-bit, the model collapses to floor on all tasks
 
 #### Comparison Plot
 
-![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](results/training_comparison.png)
+![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](results/llama_before_after_comparison.png)
 
 *Left: F1 score per task. Right: Recall per task. Orange = GRPO trained, Blue = baseline. Evaluated on held-out seeds 100–104.*
 
