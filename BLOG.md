@@ -145,18 +145,28 @@ The 0.01 floor is worth explaining. Without it, a model could learn to ace the e
 
 ---
 
-## Training Pipeline: GRPO on a Free T4
+## Training Pipeline
 
-The training script runs on Google Colab's free T4 GPU using Unsloth's 4-bit quantized Llama 3.1 8B.
+Two separate training runs were conducted, on different hardware and different models.
+
+### Llama 3.1 8B — HuggingFace Jobs (A10-Large GPU)
+
+The Llama run was submitted to HuggingFace Jobs and executed on an A10-Large GPU. This gave significantly more breathing room than a free Colab session — full bfloat16 precision, no VRAM juggling, and enough headroom to run the reward evaluator without hitting OOM mid-rollout.
 
 **Configuration:**
-- Base model: `unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit`
+- Base model: `meta-llama/Llama-3.1-8B-Instruct`
 - LoRA rank: 16, alpha: 16, dropout: 0
 - Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`
 - Training epochs: 1
 - Batch size: 2, generations per prompt: 4
 - Learning rate: 5e-6
 - Max sequence length: 4096
+
+### Qwen 2.5-1.5B — Google Colab (T4)
+
+A second run using Qwen 2.5-1.5B is currently in progress on a free Colab T4. The smaller model size makes this viable on constrained hardware with 4-bit quantization via Unsloth. Results pending — see the results section below.
+
+### Shared design decisions across both runs
 
 **Seed separation:**
 - Training: seeds 42–51 (10 seeds × 4 tasks = 40 prompts)
@@ -179,47 +189,63 @@ If all three fail, the output scores 0.01 (the floor). This is important — sil
 
 ## Results
 
-### Llama 3.1 8B Baseline (No Training, Seed 42)
+### Llama 3.1 8B — Trained on HuggingFace Jobs (A10-Large), Evaluated on Held-Out Seeds 100–104
 
-This is the unmodified model's performance against the environment:
+| | Mean Score |
+|---|---|
+| **Baseline** | **0.1690** |
+| **Trained (GRPO + LoRA)** | **0.1230** |
+| **Delta** | **-0.0460 (-27.2%)** |
 
-| Task | Difficulty | F1 Score | Precision | Recall |
-|---|---|---|---|---|
-| Expense Audit | Easy | 0.12 | 0.07 | 0.43 |
-| Invoice Match | Medium | 0.18 | 0.11 | 0.44 |
-| GST Reconciliation | Hard | 0.01 | 0.01 | 0.01 |
-| Fraud Detection | Expert | 0.11 | 0.11 | 0.10 |
+Per-task breakdown (trained model):
 
-A few things stand out here. Recall is much better than precision on the easier tasks — the model is casting a wide net, flagging many things, but a large fraction are false positives (red herrings doing their job). GST reconciliation is essentially floor performance; the model doesn't have the tax calculation reasoning to reliably spot rate mismatches and timing differences. Fraud detection is better than you might expect, but that's because some fraud patterns (`duplicate_payment`, `round_tripping`) leave surface-level textual signals the model can pick up without truly reasoning about the transaction graph.
+| Task | Difficulty | Trained F1 |
+|---|---|---|
+| Expense Audit | Easy | 0.356 |
+| Invoice Match | Medium | 0.074 |
+| GST Reconciliation | Hard | 0.042 |
+| Fraud Detection | Expert | 0.020 |
 
-The precision collapse is the clearest signal that the baseline needs training. F1 of 0.07 on expense audit means the model is right about 7% of the time when it flags something. In a real audit context, that would generate so much noise it would be useless.
+The overall picture is mixed in an instructive way. Expense audit improved dramatically — the trained model is finding nearly 3× more valid expense violations than the baseline. But that gain is eaten up by collapses in fraud detection and invoice matching, pulling the mean score down. The model learned the easiest task extremely well and partially at the cost of harder ones.
 
-### After GRPO Training (Llama 3.1 8B + LoRA Adapter, Held-Out Seeds 100–104)
-
-*Training run in progress — results will be updated here when the Colab run completes.*
-
-| Task | Baseline F1 | Trained F1 | Delta |
-|---|---|---|---|
-| Expense Audit | 0.12 | *pending* | — |
-| Invoice Match | 0.18 | *pending* | — |
-| GST Reconciliation | 0.01 | *pending* | — |
-| Fraud Detection | 0.11 | *pending* | — |
+This is exactly the failure mode the anti-gaming guard was designed to catch, which makes the result both frustrating and useful. The 0.20 weighted F1 floor was intended to force breadth across all four specialists. In practice, the floor is evaluated at campaign scoring time, not during the per-step reward signal that drives GRPO updates — so the optimizer saw more gradient signal from expense audit (where it was making progress) and less from fraud detection (where early rollouts were near-zero). The curriculum imbalance did its damage before the campaign-level guard had a chance to penalize it.
 
 The adapter is available at: [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
 
-### Qwen — Training in Progress
+### Qwen 2.5-1.5B — Training in Progress (Google Colab, T4)
 
-A Qwen baseline and GRPO fine-tuned run are also underway. Results and comparison against Llama will be added here once the run completes. The same held-out seed set (100–104) will be used for apples-to-apples comparison.
+A second run using Qwen 2.5-1.5B is currently in progress on Colab. The smaller model is a useful comparison point — it runs comfortably on a free T4 with 4-bit quantization, which makes the training pipeline accessible without any paid compute. The question is whether the smaller parameter count costs meaningfully in task performance, or whether the financial audit tasks are constrained enough that a 1.5B model can learn the relevant policy patterns.
+
+Results will be filled in here when the run completes. The same held-out seeds (100–104) will be used.
+
+| | Baseline Mean | Trained Mean | Delta |
+|---|---|---|---|
+| **Qwen 2.5-1.5B** | *pending* | *pending* | *pending* |
+
+Per-task (trained):
+
+| Task | Trained F1 |
+|---|---|
+| Expense Audit | *pending* |
+| Invoice Match | *pending* |
+| GST Reconciliation | *pending* |
+| Fraud Detection | *pending* |
 
 ---
 
 ## What Went Wrong (And Why That's Useful)
 
-**The GST floor problem.** GST reconciliation was always going to be the hardest task, but I underestimated how badly a pretrained model would perform on it. The task requires date-specific tax rate lookup, cumulative credit tracking, and timing difference reasoning — none of which a general-purpose instruct model has in any reliable form. The RL training loop faces a cold-start problem: if the baseline almost never finds a true positive, the reward signal is effectively zero and GRPO has nothing to update toward. The mitigation was keeping the partial credit signal (0.40 for right document) to create at least some gradient. Whether that's enough will show in the trained scores.
+**The trained Llama model underperformed its own baseline on average.** This is the result that demands the most honest explanation. The mean score dropped from 0.169 to 0.123 after GRPO training. That's not noise — it's a 27% regression, and it has a clear cause.
 
-**Parser brittleness with truncated completions.** The 4-bit quantized model running on a T4 will sometimes hit the `max_completion_tokens` limit mid-JSON. An incomplete JSON array gets a score of 0.01, which is the correct behavior, but it adds noise to training. The salvage parser catches some of these — it can reconstruct complete findings objects from a truncated array — but not all. In retrospect, the prompt engineering could have been more explicit about front-loading high-confidence findings first.
+Expense audit improved by a huge margin (0.356 trained vs. ~0.12 baseline). But fraud detection effectively collapsed to 0.020, and invoice matching dropped significantly to 0.074. GRPO optimized toward the path of least resistance. Expense audit has the densest reward signal — the most achievable true positives per rollout, the clearest error taxonomy, the most forgiving scoring. Fraud detection at the Expert level requires cross-transaction graph reasoning that produces near-zero reward on early rollouts. When early rollouts on fraud detection are consistently scoring at the floor, GRPO has almost no gradient to work with. The model converged on a policy that was very good at one task and had quietly given up on the hard ones.
 
-**Red herring false positives.** The baseline's precision collapse is almost entirely driven by red herrings. The environment plants plausible-looking non-violations — a high meal expense that's just under the limit, a weekend transaction that actually had prior approval. The model flags these aggressively. Training should push the model toward reading the policy conditions more carefully before flagging, but this is a harder behavior to shape than pure recall.
+The campaign-level anti-gaming guard (specialist F1 floor < 0.20 → campaign score = 0.01) was meant to prevent exactly this. The flaw is that this guard operates on the final campaign score, not on the per-step GRPO reward that shapes the actual weight updates. By the time campaign scoring would have penalized the imbalance, the optimizer had already committed to the lopsided policy.
+
+The fix would be to incorporate the breadth penalty directly into the step reward — so a rollout that scores well on expense but produces nothing on fraud gets a discount at training time, not just at evaluation time. That's a design change for the next iteration.
+
+**The GST cold-start problem.** The model had close to zero chance of finding a GST true positive in early rollouts — the task requires date-specific rate lookup, timing difference reasoning, and cumulative credit tracking that a pretrained instruct model doesn't have. With sparse positives, there's almost no reward signal to learn from. The partial credit mechanism (0.40 for right document, wrong error type) was intended to create at least some gradient, and the trained score of 0.042 vs. a near-zero baseline shows it helped slightly. But this is a task where SFT warm-starting on structured examples would have meaningfully changed what GRPO had to work with.
+
+**Parser brittleness with truncated completions.** On constrained hardware the model will sometimes hit the `max_completion_tokens` limit mid-JSON, leaving a truncated array that scores 0.01. The salvage parser recovers some of these cases but not all. In retrospect, prompting the model to front-load high-confidence findings first — rather than building the full list before committing — would have reduced the impact of truncation on training signal quality.
 
 ---
 
