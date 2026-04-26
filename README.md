@@ -37,7 +37,7 @@ This section is the single source of truth for all links judges need.
 ### Required Links
 
 - GitHub Repository: https://github.com/balloonmann/financial-audit-env
-- Hugging Face Space (Environment URL): https://balloonmann-financial-audit-env.hf.space
+- Hugging Face Space (Environment URL): [https://balloonmann-financial-audit-env.hf.space](https://huggingface.co/spaces/balloonmann/financial_audit_env)
 - Training Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 - Blog Post: [BLOG.md](BLOG.md)
 - GRPO Adapter (HF Hub): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
