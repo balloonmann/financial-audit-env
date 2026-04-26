@@ -16,7 +16,7 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · **Theme: #3 World Modeling — #3.1 Professional Tasks**
 
 - Blog post: [BLOG.md](BLOG.md)
-- Training notebook: [training/GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
+- Training notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
@@ -28,7 +28,7 @@ This section is the single source of truth for all links judges need.
 
 - GitHub Repository: https://github.com/balloonmann/financial-audit-env
 - Hugging Face Space (Environment URL): https://balloonmann-financial-audit-env.hf.space
-- Training Notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
+- Training Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 - Blog Post: [BLOG.md](BLOG.md)
 - GRPO Adapter (HF Hub): https://huggingface.co/balloonmann/financial-audit-grpo-adapter
 - Eval Artifacts: https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts
