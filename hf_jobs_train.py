@@ -90,7 +90,7 @@ def _collect_doc_ids(obj, out):
         for item in obj:
             _collect_doc_ids(item, out)
 
-def build_prompt(task_id, seed):
+def build_prompt(task_id, seed, doc_chars=4000):
     env = FinancialAuditEnvironment()
     obs = env.reset(task_id=task_id, seed=seed)
     task = TASKS[task_id]
@@ -107,7 +107,7 @@ def build_prompt(task_id, seed):
         f"TASK: {obs.task_description}\n\n"
         f"VALID DOCUMENT IDs (use ONLY these exact strings): {json.dumps(doc_ids)}\n\n"
         f"ALLOWED ERROR TYPES: {json.dumps(task['error_types'])}\n\n"
-        f"DOCUMENTS:\n{json.dumps(obs.documents)[:6000]}\n\n"
+        f"DOCUMENTS:\n{json.dumps(obs.documents)[:doc_chars]}\n\n"
         "Output the JSON array only. If no errors, output []. No explanation text."
     )
     return [{"role": "user", "content": content}]
@@ -127,7 +127,7 @@ def run_eval(model, tokenizer, task_ids, seeds, label):
     model.eval()
     for tid in task_ids:
         for s in seeds:
-            messages = build_prompt(tid, s)
+            messages = build_prompt(tid, s, doc_chars=6000)
             text = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
