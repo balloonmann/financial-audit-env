@@ -37,7 +37,7 @@ This section is the single source of truth for all links judges need.
 
 - [x] OpenEnv-compatible environment hosted on HF Space
 - [x] `openenv.yaml` present and valid
-- [x] Training notebook (Unsloth + TRL GRPO) — `training/GRPO_Training_Submission.ipynb`
+- [x] Training notebook (Unsloth + TRL GRPO) — `GRPO_Training_Submission_Final.ipynb`
 - [x] Blog post with results — `BLOG.md`
 - [x] Adapter artifact uploaded to HF Hub
 - [x] Eval artifacts (baseline + trained CSVs) on HF datasets
@@ -46,9 +46,9 @@ This section is the single source of truth for all links judges need.
 ### How This README Maps to Judging Criteria
 
 - Environment Innovation (40%): multi-agent campaign + shocks + schema drift + self-improvement.
-- Storytelling (30%): domain framing, architecture, flow, and problem relevance are documented.
-- Showing Improvement in Rewards (20%): scaffold present, final before/after evidence to be added tomorrow.
-- Reward & Training Pipeline (10%): deterministic graders + reward parser + GRPO training path implemented.
+- Storytelling (30%): domain framing, architecture, flow, and problem relevance documented in README and BLOG.md.
+- Showing Improvement in Rewards (20%): before/after F1 tables + comparison plot for Llama 3.1 8B on held-out seeds 100–104; full analysis in BLOG.md.
+- Reward & Training Pipeline (10%): deterministic graders + reward parser + GRPO training path implemented and run on two models.
 
 ---
 
@@ -455,12 +455,12 @@ Dockerfile              # HuggingFace Spaces deployment
 
 | Requirement from Guidelines | Current Status | Notes |
 |-----------------------------|----------------|-------|
-| Use OpenEnv (latest release) | Covered | Dependency floor set to `openenv-core>=0.2.3` |
-| Minimal training script via Unsloth or HF TRL (Colab-rerunnable) | Covered | `training/train_grpo.py` + Colab scripts present |
-| Evidence of real training (loss/reward plots) | Pending | To be added after final run tomorrow |
-| Short write-up artifact (HF blog / <2 min video / slides) | Pending | To be added tomorrow |
-| Environment hosted on Hugging Face Space | Covered | Live Space link provided |
-| README includes all links and results | Partially covered | Link scaffold added; pending final artifact URLs and plots |
+| Use OpenEnv (latest release) | ✅ Covered | Dependency floor set to `openenv-core>=0.2.3` |
+| Minimal training script via Unsloth or HF TRL (Colab-rerunnable) | ✅ Covered | `GRPO_Training_Submission_Final.ipynb` + `training/train_grpo.py` |
+| Evidence of real training (reward improvement + plots) | ✅ Covered | Before/after F1 tables + `results/llama_before_after_comparison.png` |
+| Short write-up artifact (HF blog / <2 min video / slides) | ✅ Covered | `BLOG.md` hosted on HF Space — full submission write-up |
+| Environment hosted on Hugging Face Space | ✅ Covered | Live at https://balloonmann-financial-audit-env.hf.space |
+| README includes all links and results | ✅ Covered | All artifact links, results tables, and plots present |
 
 ---
 

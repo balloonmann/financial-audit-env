@@ -166,7 +166,7 @@ The Llama run was submitted to HuggingFace Jobs and executed on an A10-Large GPU
 
 ### Qwen 2.5-1.5B — Google Colab (T4)
 
-A second run using Qwen 2.5-1.5B is currently in progress on a free Colab T4. The smaller model size makes this viable on constrained hardware with 4-bit quantization via Unsloth. Results pending — see the results section below.
+A second run using Qwen 2.5-1.5B was run on a free Colab T4. The smaller model size makes this viable on constrained hardware with 4-bit quantization via Unsloth — the goal was to verify the training pipeline works end-to-end on the lowest accessible hardware tier.
 
 ### Shared design decisions across both runs
 
@@ -212,13 +212,13 @@ The overall picture is mixed in an instructive way. Expense audit improved drama
 
 This is exactly the failure mode the anti-gaming guard was designed to catch, which makes the result both frustrating and useful. The 0.20 weighted F1 floor was intended to force breadth across all four specialists. In practice, the floor is evaluated at campaign scoring time, not during the per-step reward signal that drives GRPO updates — so the optimizer saw more gradient signal from expense audit (where it was making progress) and less from fraud detection (where early rollouts were near-zero). The curriculum imbalance did its damage before the campaign-level guard had a chance to penalize it.
 
+![Baseline vs GRPO Trained — F1 and Recall per task (Llama 3.1 8B, held-out seeds 100–104)](results/llama_before_after_comparison.png)
+
 The adapter is available at: [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
 
-### Qwen 2.5-1.5B — Training in Progress (Google Colab, T4)
+### Qwen 2.5-1.5B — Google Colab (T4)
 
-A second run using Qwen 2.5-1.5B is currently in progress on Colab. The smaller model is a useful comparison point — it runs comfortably on a free T4 with 4-bit quantization, which makes the training pipeline accessible without any paid compute. The question is whether the smaller parameter count costs meaningfully in task performance, or whether the financial audit tasks are constrained enough that a 1.5B model can learn the relevant policy patterns.
-
-Results will be filled in here when the run completes. The same held-out seeds (100–104) will be used.
+The Qwen run used the same held-out seeds (100–104) and the same evaluation pipeline as the Llama run. At 1.5B parameters, this is the floor of what the training pipeline supports — the question was whether a model this small could absorb GRPO policy changes without collapsing output format entirely.
 
 | | Baseline Mean | Trained Mean | Delta |
 |---|---|---|---|
@@ -285,7 +285,7 @@ The one-sentence version of what this project is: an RL environment for financia
 - **GitHub Repository:** [github.com/balloonmann/financial-audit-env](https://github.com/balloonmann/financial-audit-env)
 - **GRPO Adapter (HF Hub):** [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
 - **Eval Artifacts:** [huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts](https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts)
-- **Training Notebook:** *(Colab link — to be added on competition day)*
+- **Training Notebook:** [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
