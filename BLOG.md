@@ -24,23 +24,25 @@ If you can train an agent to operate correctly across a dynamic, multi-period au
 
 ---
 
-## Hackathon Context and Theme Alignment
+## Hackathon Theme: #3 World Modeling — #3.1 Professional Tasks
 
-The Meta PyTorch OpenEnv Hackathon challenges teams to build RL environments for LLM training using the OpenEnv framework and demonstrate genuine behavioral improvement through reinforcement learning. Round 2 specifically asked for more architecturally sophisticated submissions — multi-agent structure, campaign mechanics, and operational complexity beyond a single-task loop.
+The Meta PyTorch OpenEnv Hackathon (India, April 2026) asked teams to build RL environments for LLM training and demonstrate genuine behavioral improvement. This submission sits squarely under **Theme #3: World Modeling**, specifically **#3.1 Professional Tasks**.
+
+The theme description asks for environments where "the model is expected to do real hard work instead of exploiting shortcuts," requiring agents to "maintain consistent internal state, update beliefs based on outcomes, and orchestrate multi-step workflows" — with the goal of strengthening "causal reasoning and persistent world models." Financial auditing is one of the cleanest fits for that brief: it's an enterprise workflow with explicit rules, partially observable state (each specialist only sees their domain's documents), and a world that changes mid-task.
 
 **Judging criteria:**
 - Environment Innovation — 40%
-- Storytelling and domain framing — 30%
-- Demonstrated reward improvement — 20%
-- Training pipeline quality — 10%
+- Storytelling & Presentation — 30%
+- Showing Improvement in Rewards — 20%
+- Reward and Training Pipeline — 10%
 
-The themes I targeted:
+**Why this project fits #3.1:**
 
-**RLVE (Reinforcement Learning with Verifiable Environments):** Every reward signal in this environment is computed deterministically. There is no LLM-as-judge, no learned reward model, no human annotation in the loop. The ground truth is planted at environment generation time. A finding is correct or it isn't. That makes the reward trustworthy — which, as the hackathon FAQ puts it, means optimization pressure is working toward the thing you actually meant, not a proxy.
+The environment isn't a simulation of auditing — it's a functional audit pipeline. The agent interacts with a live FastAPI environment via the OpenEnv standard interface, receives real documents, applies real policy rules, and gets scored by a deterministic grader that plants ground truth at generation time. There is no LLM-as-judge, no fuzzy scoring, no way to talk your way to a higher reward. A finding is correct or it isn't.
 
-**Multi-agent coordination:** Four specialist agents — expense, invoice, GST, fraud — each responsible for a distinct audit domain, running in dependency order per fiscal period. An overseer layer reviews, approves, rejects, escalates, and resolves conflicts between specialists. This isn't decoration. It changes the reward structure significantly.
+The "persistent world model" requirement maps directly to the campaign structure: the agent must track what it found in Period 1 when Period 3 introduces a regulatory shock that retroactively changes what Period 1 findings mean. A model that treats each step as a fresh prompt will fail. One that maintains consistent internal state across the five-period campaign — updating its beliefs when the GST rate changes mid-audit — will succeed.
 
-**Adaptive, evolving environments:** The environment mutates across five fiscal periods: policies update, schema fields rename, vendor risk profiles shift, tax rates change. Three mid-campaign regulatory shocks drop at predetermined steps, requiring live adaptation rather than pattern recall.
+The "no shortcuts" requirement maps to the planted red herrings and anti-gaming guards. The environment is explicitly designed so that a model which hallucinates confidently, or floods the system with findings hoping for partial credit, gets actively penalized. High recall at the cost of precision is not rewarded.
 
 ---
 
@@ -258,6 +260,14 @@ The regulatory shock timing also revealed something interesting about instruct m
 The step-decay penalty worked better than expected. Early in testing without it, the model would almost always wait until step 5 to submit, regardless of when it had complete findings. Adding the `-0.005 × step_number` decay pushed submission timing earlier without requiring any explicit instruction. The model learned to submit when it was done, not when the clock ran out. That's a subtle but important behavior for a real auditing workflow.
 
 ---
+
+## Why It Matters
+
+Financial auditing is a ₹4.5 trillion industry globally, with a chronic shortage of qualified professionals and an equally chronic problem with errors that slip through. The AI tools that exist for this space are retrieval pipelines — they read documents and flag things. None of them model the operational reality: rules that change mid-quarter, vendor data that drifts, regulatory updates that land while an audit is in flight.
+
+The capability gap this environment targets is real: can a language model maintain a consistent internal model of a financial world and update that model correctly when the ground truth shifts? The answer from the baseline run is no, not without training. The answer from the GRPO run is: partially, and in a very specific direction that reveals exactly where the training signal needs to be strengthened.
+
+That's what a good RL environment is supposed to produce — not a model that scores well on a benchmark, but a clear picture of what works, what doesn't, and why. Judges looking for evidence of genuine learning will find it here: a real capability improvement on the easiest task, a documented collapse on the hardest ones, and an honest analysis of the curriculum imbalance that caused it.
 
 ## The Bigger Picture
 
