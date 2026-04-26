@@ -12,12 +12,6 @@ tags: [openenv]
 <h1 align="center">💰 Financial Audit Env</h1>
 <h3 align="center"><em>A Multi-Agent Oversight Platform for Training Auditing LLMs</em></h3>
 
-<p align="center">
-  <a href="#round-2-architecture"><img src="https://img.shields.io/badge/Architecture-Multi--Agent_Campaign-blue?style=for-the-badge" alt="Architecture"></a>
-  <a href="#training"><img src="https://img.shields.io/badge/Model-Llama_3.1_8B-orange?style=for-the-badge" alt="Model"></a>
-  <a href="#training-results--held-out-seeds-100104"><img src="https://img.shields.io/badge/Training-GRPO_+_Unsloth-green?style=for-the-badge" alt="Training"></a>
-  <a href="#round-2-implementation-scorecard"><img src="https://img.shields.io/badge/Tests-108_passing-success?style=for-the-badge" alt="Tests"></a>
-</p>
 
 An OpenEnv-compatible reinforcement learning environment for training AI agents to audit financial documents through **multi-agent cooperation**, **regulatory adaptation**, and **self-improvement**. Built for the [Meta PyTorch Hackathon — Round 2](https://www.scaler.com/school-of-technology/meta-pytorch-hackathon).
 
