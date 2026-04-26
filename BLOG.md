@@ -12,7 +12,7 @@ That gap — between what AI demos show and what audit work actually requires �
 
 ---
 
-## The Problem Worth Solving
+## Problem Statement
 
 Most LLM audit demos are effectively retrieval tasks. Given clean, static documents, find the thing that violates the rule. That's a useful capability, but it's not auditing. Auditing is adversarial, multi-period, and policy-sensitive. The ground truth shifts because policy shifts. An expense that was compliant in Period 1 gets flagged in Period 3 because a new approval threshold dropped mid-campaign. An invoice that matched perfectly at submission now shows a quantity discrepancy when the goods receipt note gets updated.
 
@@ -24,7 +24,7 @@ If I could train an agent to operate correctly across a dynamic, multi-period au
 
 ---
 
-## The Story: What Actually Happens Across Five Periods
+## Campaign Walkthrough: Five Periods of World Mutation
 
 **Act 1 — The Baseline.** Period 1. The agent receives 19 expense claims and a policy doc. Stable rules, no surprises. The untrained Llama 3.1 8B scores F1 ≈ 0.12 — casting a wide net, flagging everything, right about 12% of the time.
 
@@ -38,7 +38,7 @@ A good environment doesn't hide training problems. It surfaces them so cleanly t
 
 ---
 
-## Hackathon Theme: #3 World Modeling — #3.1 Professional Tasks
+## Theme Alignment: World Modeling #3 — Professional Tasks #3.1
 
 The Meta PyTorch OpenEnv Hackathon (India, April 2026) asked teams to build RL environments for LLM training and demonstrate genuine behavioral improvement. This submission sits squarely under **Theme #3: World Modeling**, specifically **#3.1 Professional Tasks**.
 
@@ -60,7 +60,7 @@ The "no shortcuts" requirement maps to the planted red herrings and anti-gaming 
 
 ---
 
-## Architecture: A Multi-Agent Financial Audit Control Tower
+## System Architecture
 
 ### The Specialist Swarm
 
@@ -113,7 +113,7 @@ This matters because reward hacking is real. A model can learn to flood the envi
 
 ---
 
-## Reward Engineering: Getting the Signal Right
+## Reward Function Design
 
 This is the part where most RL environments fall apart, so I'll be specific about the choices.
 
@@ -257,7 +257,7 @@ The training curves tell the full story. Reward was flat at 0.01 for all 120 ste
 
 ---
 
-## How to Interpret These Results
+## Results Analysis
 
 ### If you're wondering: "Did the model learn or not?"
 
@@ -288,9 +288,7 @@ In short: Yes, this environment measures world modeling. The training results pr
 
 ---
 
-## Training Results: What I Learned (And Why It Matters)
-
-## Training Results: What I Learned (And Why It Matters)
+## Training Analysis: Curriculum Imbalance and Reward Dynamics
 
 ### The Numbers
 The trained Llama 3.1 8B model scored 0.123 on average, down from the baseline 0.169 — a 27% regression. This is the most important number in this submission, and it demands an honest explanation.
@@ -419,7 +417,7 @@ The fix would be to incorporate the breadth penalty directly into the step rewar
 
 ---
 
-## What I Learned About LLM Behavior (Surprising Findings)
+## Empirical LLM Behavior: Observations and Analysis
 
 ### 1. The "Knowing vs. Doing" Gap Is Real and Quantifiable
 
@@ -445,7 +443,7 @@ The `-0.005 × step_number` decay penalty shapes behavior without any instructio
 
 ---
 
-## Why This Environment Matters (And What It Proves)
+## Research Significance and Practical Implications
 
 ### The Business Problem (Real)
 Financial auditing is a ₹4.5 trillion global industry. Auditors are expensive, slow, and human auditors make mistakes. AI that could automate parts of this work would be valuable.
@@ -469,7 +467,7 @@ Can an LLM maintain a consistent internal model of a financial world and update 
 - **Finance/audit teams:** This demonstrates where LLMs will struggle with your real workflows (regulatory adaptation, cross-period state, rule changes mid-process).
 - **LLM training practitioners:** The anti-gaming guards and multi-task structure offer patterns for avoiding common RL pitfalls.
 
-## What the Agent Learned (from reward signal alone)
+## Observed Agent Behaviors Under GRPO Training
 
 1. Submit findings as structured JSON — free-text gets parsed but loses precision.
 2. Prefer high-confidence claims on easy tasks; partial-credit weighting punishes hallucinated false positives.
@@ -477,7 +475,7 @@ Can an LLM maintain a consistent internal model of a financial world and update 
 4. On the final step, abstaining beats guessing when recall < 0.3.
 5. Cross-period findings should be referenced, not re-derived — the reward structure rewards continuity.
 
-## What I Learned (from the agent's failures)
+## Training Findings and Design Implications
 
 1. **GRPO with a single scalar reward collapses onto whichever task has the densest signal.** This wasn't a hypothesis — it's what happened. Expense audit had 7 findable errors with clear textual signals. Fraud had 10 but required cross-transaction graph reasoning. The optimizer never got started on fraud.
 2. **A 0.20 specialist F1 floor isn't enough** if it only fires at campaign scoring time and not during per-step GRPO updates. The fix is per-task floors baked into the step reward, not the final evaluator.
@@ -487,7 +485,7 @@ Can an LLM maintain a consistent internal model of a financial world and update 
 
 ---
 
-## The Bigger Picture
+## Broader Research Context
 
 There's a temptation in RL research to reach for the most complex environment possible. More agents, more tasks, more shaping terms. The FAQ for this hackathon is blunt about why that goes wrong: conflicting reward signals create unstable training, over-shaped rewards change the optimal policy in unintended ways, and environments whose failure modes you don't understand are environments you can't safely optimize.
 
@@ -499,7 +497,7 @@ The one-sentence version of what this project is: an RL environment for financia
 
 ## Links
 
-- **HuggingFace Space (live environment):** [balloonmann-financial-audit-env.hf.space](https://balloonmann-financial-audit-env.hf.space)
+- **HuggingFace Space (live environment):** [huggingface.co/spaces/balloonmann/financial_audit_env](https://huggingface.co/spaces/balloonmann/financial_audit_env)
 - **GitHub Repository:** [github.com/balloonmann/financial-audit-env](https://github.com/balloonmann/financial-audit-env)
 - **GRPO Adapter (HF Hub):** [huggingface.co/balloonmann/financial-audit-grpo-adapter](https://huggingface.co/balloonmann/financial-audit-grpo-adapter)
 - **Eval Artifacts:** [huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts](https://huggingface.co/datasets/balloonmann/financial-audit-eval-artifacts)

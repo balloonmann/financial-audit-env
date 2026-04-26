@@ -21,13 +21,13 @@ tags: [openenv]
 
 An OpenEnv-compatible reinforcement learning environment for training AI agents to audit financial documents through **multi-agent cooperation**, **regulatory adaptation**, and **self-improvement**. Built for the [Meta PyTorch Hackathon — Round 2](https://www.scaler.com/school-of-technology/meta-pytorch-hackathon).
 
-> **Theme #3.1 — World Modeling / Professional Tasks** | Built with [OpenEnv v0.2.3+](https://github.com/meta-pytorch/OpenEnv) | Deployed on [HF Spaces](https://balloonmann-financial-audit-env.hf.space) | Training via [HF TRL GRPO](https://github.com/huggingface/trl) + Unsloth in [Colab](GRPO_Training_Submission_Final.ipynb)
+> **Theme #3 World Modeling — #3.1 Professional Tasks** | Built with [OpenEnv v0.2.3+](https://github.com/meta-pytorch/OpenEnv) | Deployed on [HF Spaces](https://huggingface.co/spaces/balloonmann/financial_audit_env) | Training via [HF TRL GRPO](https://github.com/huggingface/trl) + Unsloth in [Colab](GRPO_Training_Submission_Final.ipynb)
 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · Blog: [BLOG.md](BLOG.md) · Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
-## The Story: From Static Rules to Adaptive Reasoning
+## Environment Walkthrough: From Baseline to Regulatory Shock
 
 **Act 1 — The Baseline.** Period 1. The agent receives 19 expense claims and a policy doc. Easy task, stable rules, F1 ≈ 0.12.
 
@@ -41,7 +41,7 @@ A good environment doesn't hide training problems. It surfaces them so cleanly t
 
 ---
 
-## The Core Problem
+## Problem Statement
 
 Most LLM tools for finance treat auditing as retrieval: "find the thing that violates the rule." This environment tests something harder: **Can an LLM maintain a consistent internal model of a financial world and UPDATE that model when ground truth shifts?**
 
@@ -49,7 +49,7 @@ Real audits run across multiple fiscal periods. A GST rate changes mid-audit. A 
 
 ---
 
-## System Details
+## System Specifications
 
 | Component | Detail |
 |---|---|
@@ -63,10 +63,10 @@ Real audits run across multiple fiscal periods. A GST rate changes mid-audit. A 
 
 ---
 
-## Submission Hub
+## Submission Index
 
 - **GitHub:** https://github.com/balloonmann/financial-audit-env
-- **HF Space (live env):** https://balloonmann-financial-audit-env.hf.space
+- **HF Space (live env):** https://huggingface.co/spaces/balloonmann/financial_audit_env
 - **Training notebook:** [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 - **Blog:** [BLOG.md](BLOG.md)
 - **GRPO adapter:** https://huggingface.co/balloonmann/financial-audit-grpo-adapter
@@ -265,7 +265,7 @@ Mean: baseline 0.0470 → trained 0.0100 (−78.7%). All four tasks collapse to 
 
 ---
 
-## What the Agent Learned (from reward signal alone)
+## Observed Agent Behaviors Under GRPO Training
 
 1. Submit findings as structured JSON — free-text gets parsed but loses precision.
 2. Prefer high-confidence claims on easy tasks; partial-credit weighting punishes hallucinated FPs.
@@ -273,7 +273,7 @@ Mean: baseline 0.0470 → trained 0.0100 (−78.7%). All four tasks collapse to 
 4. On the final step, abstaining beats guessing when recall < 0.3.
 5. Cross-period findings should be referenced, not re-derived — repeated evidence is rewarded.
 
-## What I Learned (from the agent's failures)
+## Training Findings and Design Implications
 
 1. GRPO with a single scalar reward collapses onto whichever task has the densest signal.
 2. A 0.20 specialist F1 floor isn't enough; per-task floors or task-stratified reward batches are next.
@@ -304,7 +304,7 @@ done
 
 ---
 
-## Getting Started
+## Setup and Local Development
 
 ```bash
 git clone https://github.com/balloonmann/financial-audit-env.git
@@ -409,7 +409,7 @@ Dockerfile              # HF Spaces image
 
 ---
 
-## Why This Matters
+## Research Significance
 
 This environment tests what cutting-edge agentic-LLM research is converging on:
 
