@@ -16,8 +16,7 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 **[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · **Theme: #3 World Modeling — #3.1 Professional Tasks**
 
 - Blog post: [BLOG.md](BLOG.md)
-- Training notebook: [training/GRPO_Training_Submission.ipynb](training/GRPO_Training_Submission.ipynb)
-- CI quality gate: [.github/workflows/ci.yml](.github/workflows/ci.yml)
+- Training notebook: [training/GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
@@ -280,7 +279,7 @@ At 1.5B parameters quantized to 4-bit, the model collapses to floor on all tasks
 
 #### Comparison Plot
 
-![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](results/training_comparison.png)
+![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](<img width="2501" height="879" alt="llama_before_after_comparison" src="https://github.com/user-attachments/assets/b008a20e-db41-4f78-baad-7449028d3637" />)
 
 *Left: F1 score per task. Right: Recall per task. Orange = GRPO trained, Blue = baseline. Evaluated on held-out seeds 100–104.*
 
