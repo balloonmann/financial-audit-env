@@ -279,7 +279,8 @@ At 1.5B parameters quantized to 4-bit, the model collapses to floor on all tasks
 
 #### Comparison Plot
 
-![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](<img width="2501" height="879" alt="llama_before_after_comparison" src="https://github.com/user-attachments/assets/a6cc2715-5ff3-415a-b20b-4716f045fa21" />
+![Held-out Score and Recall — Baseline vs GRPO Trained (Llama 3.1 8B)](
+<img width="2501" height="879" alt="llama_before_after_comparison" src="https://github.com/user-attachments/assets/a6cc2715-5ff3-415a-b20b-4716f045fa21" />
 )
 
 *Left: F1 score per task. Right: Recall per task. Orange = GRPO trained, Blue = baseline. Evaluated on held-out seeds 100–104.*
