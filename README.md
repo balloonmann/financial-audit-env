@@ -17,7 +17,7 @@ An OpenEnv-compatible reinforcement learning environment for training AI agents 
 
 > **Theme #3 World Modeling — #3.1 Professional Tasks** | Built with [OpenEnv v0.2.3+](https://github.com/meta-pytorch/OpenEnv) | Deployed on [HF Spaces](https://huggingface.co/spaces/balloonmann/financial_audit_env) | Training via [HF TRL GRPO](https://github.com/huggingface/trl) + Unsloth in [Colab](GRPO_Training_Submission_Final.ipynb)
 
-**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **108 tests passing** · Blog: [BLOG.md](BLOG.md) · Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
+**[Live API](https://balloonmann-financial-audit-env.hf.space/docs)** · **119 tests passing** · Blog: [BLOG.md](BLOG.md) · Notebook: [GRPO_Training_Submission_Final.ipynb](GRPO_Training_Submission_Final.ipynb)
 
 ---
 
@@ -304,7 +304,7 @@ done
 git clone https://github.com/balloonmann/financial-audit-env.git
 cd financial-audit-env && pip install -e .
 python -m financial_audit_env.server.app   # serves on :8000
-python -m pytest tests -q                  # 108 tests pass in ~10s
+python -m pytest tests -q                  # 119 tests pass in ~10s
 ```
 
 **Docker:** `docker build -t financial-audit-env . && docker run -p 8000:8000 financial-audit-env`
@@ -381,7 +381,7 @@ training/
   evaluator.py          # InProcessEvaluator
   reward.py             # GRPO reward parser
   train_grpo.py         # Colab training script
-tests/                  # 108 pytest tests
+tests/                  # 119 pytest tests
 inference.py            # R1 + R2 inference CLI
 openenv.yaml            # OpenEnv spec
 Dockerfile              # HF Spaces image
@@ -428,7 +428,7 @@ Keeping scoring deterministic and bounded in (0.01, 0.99) is what makes GRPO usa
 
 ## Round 2 Implementation Scorecard
 
-> Verified 2026-04-24 with `pytest tests -q` — all 108 tests passing.
+> Verified 2026-04-24 with `pytest tests -q` — all 119 tests passing.
 
 | Step | Component | Status |
 |------|-----------|--------|
@@ -441,7 +441,7 @@ Keeping scoring deterministic and bounded in (0.01, 0.99) is what makes GRPO usa
 | 7 | Adversarial Red/Blue (5-level difficulty, arms race) | ✅ |
 | 8 | Training infra (InProcessEvaluator, reward parser, GRPO script) | ✅ |
 | 9 | Campaign inference (multi-period flow + CLI) | ✅ |
-| 10 | Tests + README (108 tests passing) | ✅ |
+| 10 | Tests + README (119 tests passing) | ✅ |
 
 **10/10 implementation steps complete.**
 
@@ -455,7 +455,7 @@ Keeping scoring deterministic and bounded in (0.01, 0.99) is what makes GRPO usa
 
 ### Test Coverage
 
-`test_campaign_round2.py` (10) · `test_data_generators.py` (22) · `test_environment.py` (20) · `test_graders.py` (15) · `test_regulatory.py` (7) · `test_security.py` (5) · `test_self_improve.py` (6) · `test_adversarial.py` (4) → **108 passing in ~10s.**
+`test_campaign_round2.py` (10) · `test_data_generators.py` (22) · `test_environment.py` (20) · `test_graders.py` (15) · `test_regulatory.py` (7) · `test_security.py` (5) · `test_self_improve.py` (6) · `test_adversarial.py` (4) → **119 passing in ~10s.**
 
 ### Key Quantities
 
