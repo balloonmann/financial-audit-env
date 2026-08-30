@@ -54,18 +54,26 @@ def _env_float(name: str, default: float) -> float:
 
 MODEL_NAME = os.getenv("TRAIN_MODEL_NAME", "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit")
 MAX_SEQ_LENGTH = _env_int("TRAIN_MAX_SEQ_LENGTH", 4096)
-LORA_R = _env_int("TRAIN_LORA_R", 16)
-LORA_ALPHA = _env_int("TRAIN_LORA_ALPHA", 16)
-TRAIN_EPOCHS = _env_int("TRAIN_EPOCHS", 1)
+LORA_R = _env_int("TRAIN_LORA_R", 32)            # Increased: more capacity for 4-task training
+LORA_ALPHA = _env_int("TRAIN_LORA_ALPHA", 32)    # Keep alpha == r
+TRAIN_EPOCHS = _env_int("TRAIN_EPOCHS", 3)
 TRAIN_BATCH_SIZE = _env_int("TRAIN_BATCH_SIZE", 2)
-TRAIN_NUM_GENERATIONS = _env_int("TRAIN_NUM_GENERATIONS", 4)
-TRAIN_MAX_COMPLETION_LENGTH = _env_int("TRAIN_MAX_COMPLETION_LENGTH", 1024)
+TRAIN_NUM_GENERATIONS = _env_int("TRAIN_NUM_GENERATIONS", 8)     # FIXED: was 4 → 8 for GRPO variance
+TRAIN_MAX_COMPLETION_LENGTH = _env_int("TRAIN_MAX_COMPLETION_LENGTH", 512)  # FIXED: was 1024 → 512 balanced
 TRAIN_LOGGING_STEPS = _env_int("TRAIN_LOGGING_STEPS", 5)
 TRAIN_SAVE_STEPS = _env_int("TRAIN_SAVE_STEPS", 50)
-TRAIN_LEARNING_RATE = _env_float("TRAIN_LEARNING_RATE", 5e-6)
+TRAIN_LEARNING_RATE = _env_float("TRAIN_LEARNING_RATE", 5e-6)    # FIXED: was 5e-6, keep stable
 TRAIN_SEEDS = list(range(42, 52))       # 10 training seeds
 HELD_OUT_SEEDS = list(range(100, 105))  # 5 held-out seeds
 TASKS = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
+
+# Per-task reward multipliers — harder tasks get more gradient signal
+TASK_REWARD_MULTIPLIERS = {
+    "expense_audit":      1.0,
+    "invoice_match":      1.4,
+    "gst_reconciliation": 1.8,
+    "fraud_detection":    2.2,
+}
 
 
 def setup_model():
@@ -92,7 +100,11 @@ def setup_model():
         model = FastLanguageModel.get_peft_model(
             model,
             r=LORA_R,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            # FIXED: include MLP layers for structured JSON format learning
+            target_modules=[
+                "q_proj", "k_proj", "v_proj", "o_proj",  # attention
+                "gate_proj", "up_proj", "down_proj",      # MLP
+            ],
             lora_alpha=LORA_ALPHA,
             lora_dropout=0,
         )
@@ -110,7 +122,7 @@ def setup_model():
 
 
 def create_dataset():
-    """Create training dataset of audit prompts with task/seed metadata."""
+    """Create training dataset of audit prompts with real document content and valid IDs."""
     try:
         from datasets import Dataset
     except ImportError:
@@ -118,46 +130,80 @@ def create_dataset():
         return None
 
     from financial_audit_env.server.tasks import TASKS as TASK_DEFS
+    from financial_audit_env.server.environment import FinancialAuditEnvironment
+    import json as _json
 
+    _ID_FIELDS = (
+        "document_id", "expense_id", "invoice_id", "po_id", "grn_id",
+        "txn_id", "vendor_id", "invoice_no", "id", "doc_id",
+    )
+
+    def _collect_ids(obj, out):
+        if isinstance(obj, dict):
+            for k in _ID_FIELDS:
+                v = obj.get(k)
+                if isinstance(v, str) and v:
+                    out.append(v)
+            for v in obj.values():
+                _collect_ids(v, out)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect_ids(item, out)
+
+    env = FinancialAuditEnvironment()
     prompts = []
+
     for task_id, task in TASK_DEFS.items():
         for seed in TRAIN_SEEDS:
-            prompts.append({
-                "prompt": (
-                    f"You are a financial auditor performing: {task['name']}.\n\n"
-                    f"{task['description']}\n\n"
-                    f"Analyze the financial documents and report your findings as a JSON array.\n"
-                    f"Each finding must have: document_id, error_type, description, and confidence (0.0-1.0).\n\n"
-                    f"Valid error types: {', '.join(task['error_types'])}\n\n"
-                    f"Output format:\n"
-                    f'[{{"document_id": "...", "error_type": "...", "description": "...", "confidence": 0.85}}]\n\n'
-                    f"Be precise — false positives will lower your score. "
-                    f"Be thorough — missed errors will also lower your score."
-                ),
-                "task_id": task_id,
-                "seed": seed,
-            })
+            try:
+                obs = env.reset(task_id=task_id, seed=seed)
+                raw_ids: list = []
+                _collect_ids(obs.documents, raw_ids)
+                seen: set = set()
+                doc_ids = [x for x in raw_ids if not (x in seen or seen.add(x))]
+                doc_preview = _json.dumps(obs.documents)[:3500]
 
+                content = (
+                    "You are a financial auditor. Identify errors in the documents below.\n"
+                    "Output ONLY a valid JSON array. Each object must have exactly these fields:\n"
+                    '  {"document_id": "<MUST be from VALID IDs list>", '
+                    '"error_type": "<from ALLOWED list>", '
+                    '"description": "<brief reason>", "confidence": <0.0-1.0>}\n\n'
+                    f"TASK: {obs.task_description}\n\n"
+                    f"VALID DOCUMENT IDs (use ONLY these exact strings): {_json.dumps(doc_ids)}\n\n"
+                    f"ALLOWED ERROR TYPES: {_json.dumps(task['error_types'])}\n\n"
+                    f"DOCUMENTS:\n{doc_preview}\n\n"
+                    "Output the JSON array only. If no errors, output []. No explanation text."
+                )
+                prompts.append({
+                    "prompt": [{"role": "user", "content": content}],
+                    "task_id": task_id,
+                    "seed": seed,
+                })
+            except Exception as e:
+                print(f"  [WARN] Skipping {task_id} seed={seed}: {e}")
+
+    print(f"  Built {len(prompts)} prompts with real document content")
     return Dataset.from_list(prompts)
 
 
 def create_reward_fn():
-    """Create reward function using in-process evaluator (no HTTP overhead)."""
+    """Create reward function with per-task multipliers."""
     from training.evaluator import InProcessEvaluator
     from training.reward import parse_findings_from_text
+    import re as _re
 
     evaluator = InProcessEvaluator()
 
     def reward_fn(completions: List[str], **kwargs) -> List[float]:
         """
-        GRPO reward function.
+        GRPO reward function with per-task multipliers.
         Parses each completion, evaluates against ground truth.
-        Returns F1-based scores in [0.01, 0.99].
+        Returns scaled scores in [0.01, 0.97].
         """
         task_ids = kwargs.get("task_id", ["expense_audit"] * len(completions))
         seeds = kwargs.get("seed", [42] * len(completions))
 
-        # Handle single values
         if isinstance(task_ids, str):
             task_ids = [task_ids] * len(completions)
         if isinstance(seeds, int):
@@ -166,9 +212,28 @@ def create_reward_fn():
         rewards = []
         for comp, tid, s in zip(completions, task_ids, seeds):
             try:
+                multiplier = TASK_REWARD_MULTIPLIERS.get(tid, 1.0)
                 findings = parse_findings_from_text(comp)
+
+                if not findings:
+                    has_json = bool(_re.search(r'\[\s*[\{\]]', comp))
+                    rewards.append(0.03 if has_json else 0.01)
+                    continue
+
                 result = evaluator.evaluate(tid, s, findings)
-                rewards.append(result["score"])
+                score = float(result["score"])
+                tp = result.get("true_positives", 0)
+                pm = result.get("grader_result", {}).get("partial_matches", 0)
+
+                if tp > 0 or score > 0.01:
+                    final = min(score * multiplier, 0.97)
+                elif pm > 0:
+                    partial_score = min(0.08 + pm * 0.02, 0.20)
+                    final = min(partial_score * multiplier, 0.25)
+                else:
+                    final = 0.06
+
+                rewards.append(round(max(0.01, min(0.97, final)), 4))
             except Exception:
                 rewards.append(0.01)
         return rewards
@@ -278,12 +343,15 @@ def train():
             output_dir="./grpo-financial-audit",
             num_train_epochs=TRAIN_EPOCHS,
             per_device_train_batch_size=TRAIN_BATCH_SIZE,
-            num_generations=TRAIN_NUM_GENERATIONS,
-            max_completion_length=TRAIN_MAX_COMPLETION_LENGTH,
+            num_generations=TRAIN_NUM_GENERATIONS,      # 8
+            max_completion_length=TRAIN_MAX_COMPLETION_LENGTH,  # 512
             logging_steps=TRAIN_LOGGING_STEPS,
             save_steps=TRAIN_SAVE_STEPS,
-            learning_rate=TRAIN_LEARNING_RATE,
-            report_to="none",             # Disable wandb for now
+            learning_rate=TRAIN_LEARNING_RATE,          # 5e-6
+            max_grad_norm=0.5,                          # Tightened
+            temperature=0.7,                            # Diversity within groups
+            beta=0.04,                                  # Light KL, prevents forgetting
+            report_to="none",
         )
 
         trainer = GRPOTrainer(

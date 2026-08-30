@@ -21,13 +21,13 @@ PatchFastRL("GRPO", FastLanguageModel)
 # ─────────────────────────────────────────────────────────────────────────────
 MODEL_NAME        = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
 MAX_SEQ_LENGTH    = 4096
-LORA_R            = 16
-LORA_ALPHA        = 16
+LORA_R            = 32      # Increased from 16: more capacity for 4-task multi-objective
+LORA_ALPHA        = 32      # Keep alpha == r for stable training
 TRAIN_EPOCHS      = 3
-BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS
-NUM_GENERATIONS   = 2       # generation_batch_size (BATCH_SIZE) must be divisible by this
-MAX_COMPLETION    = 384
-LEARNING_RATE     = 2e-5
+BATCH_SIZE        = 2       # Must divide NUM_GENERATIONS evenly
+NUM_GENERATIONS   = 8       # FIXED: was 2 → GRPO needs within-group variance; 8 ensures signal
+MAX_COMPLETION    = 512     # FIXED: was 384 → GST/fraud tasks have long JSON arrays
+LEARNING_RATE     = 5e-6    # FIXED: was 2e-5 → lower LR avoids catastrophic forgetting
 LOGGING_STEPS     = 5
 SAVE_STEPS        = 50
 ADAPTER_DIR       = "./grpo-financial-audit-adapter"
@@ -35,6 +35,15 @@ ARTIFACTS_DIR     = "./artifacts"
 TRAIN_SEEDS       = list(range(42, 52))
 HELD_OUT_SEEDS    = list(range(100, 105))
 TASK_IDS          = ["expense_audit", "invoice_match", "gst_reconciliation", "fraud_detection"]
+
+# Per-task reward multipliers: harder tasks get boosted so the model can't specialise
+# on expense_audit (easy) while ignoring gst/fraud (hard/expert).
+TASK_REWARD_MULTIPLIERS = {
+    "expense_audit":      1.0,   # easy — baseline weight
+    "invoice_match":      1.4,   # medium — upweight to prevent neglect
+    "gst_reconciliation": 1.8,   # hard — significant upweight
+    "fraud_detection":    2.2,   # expert — highest upweight
+}
 
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 os.makedirs(ADAPTER_DIR, exist_ok=True)
@@ -181,7 +190,12 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=LORA_R,
     lora_alpha=LORA_ALPHA,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    # FIXED: added MLP layers (gate/up/down_proj) — essential for learning
+    # structured JSON output formats and financial reasoning patterns.
+    target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",  # attention
+        "gate_proj", "up_proj", "down_proj",      # MLP — NEW
+    ],
     lora_dropout=0,
     bias="none",
     use_gradient_checkpointing="unsloth",
@@ -206,13 +220,23 @@ for tid in TASK_IDS:
 train_dataset = Dataset.from_list(train_rows)
 print(f"  Dataset: {len(train_dataset)} prompts")
 
-# Reward function — shaped to create variance within GRPO groups.
-# Tightened ladder so model can't game floor without finding real matches:
-#   0.01   — no JSON attempt
-#   0.02   — JSON attempt but 0 findings parsed
-#   0.025  — findings parsed, 0 doc matches (small bump only)
-#   0.05+  — partial doc matches (right doc, wrong error type)
-#   evaluator score — any true positives (real partial_credit_f1, up to 0.99)
+# ─────────────────────────────────────────────────────────────────────────────
+# Reward function — reshaped for all-task improvement.
+#
+# Key changes vs previous version:
+#   1. Per-task multipliers: harder tasks get larger gradient signal
+#   2. Smoother reward ladder with more intermediate levels
+#   3. Partial-doc-match reward (0.08-0.15) gives gradient even with wrong error type
+#   4. Bonus for outputting valid JSON structure even when score is low
+#   5. Penalty removed from floor to avoid all-identical-reward groups
+#
+# Reward ladder (before per-task multiplier):
+#   0.01   — exception / unparseable output
+#   0.03   — JSON attempted but 0 valid findings parsed
+#   0.06   — findings parsed, 0 doc-ID matches in ground truth
+#   0.08+  — partial doc matches (right doc, wrong error type) — 0.08 + 0.02*n
+#   score  — full evaluator partial_credit_f1 if any true positives
+# ─────────────────────────────────────────────────────────────────────────────
 _reward_debug_n = 0
 
 def _extract_completion_text(comp):
@@ -227,6 +251,7 @@ def _extract_completion_text(comp):
     return str(comp)
 
 def reward_fn(completions, task_id, seed, **kwargs):
+    """GRPO reward function with per-task multipliers and smooth reward ladder."""
     global _reward_debug_n
     import re as _re
     rewards = []
@@ -235,29 +260,44 @@ def reward_fn(completions, task_id, seed, **kwargs):
             comp = _extract_completion_text(comp)
             findings = parse_findings_from_text(comp)
 
-            # Debug: log first 8 reward calls to verify output format
-            if _reward_debug_n < 8:
+            # Debug: log first 12 reward calls
+            if _reward_debug_n < 12:
                 print(f"\n[REWARD {_reward_debug_n}] tid={tid} s={s} "
                       f"parsed={len(findings)} comp[:300]={comp[:300]!r}")
                 _reward_debug_n += 1
 
+            multiplier = TASK_REWARD_MULTIPLIERS.get(tid, 1.0)
+
             if not findings:
-                has_json = bool(_re.search(r'\[\s*\{', comp))
-                rewards.append(0.02 if has_json else 0.01)
+                # Reward valid JSON structure attempts even without findings
+                has_json_array = bool(_re.search(r'\[\s*[\{\]]', comp))
+                base = 0.03 if has_json_array else 0.01
+                # Don't apply multiplier to floor — keep floor consistent
+                rewards.append(base)
                 continue
 
             result = evaluator.evaluate(tid, int(s), findings)
             score = float(result["score"])
             tp   = result.get("true_positives", 0)
             pm   = result.get("grader_result", {}).get("partial_matches", 0)
+            fp   = result.get("false_positives", 0)
 
-            # Tight floor: only meaningful matches lift score above 0.025
-            if score <= 0.01:
-                if pm > 0:
-                    score = min(0.05 + pm * 0.015, 0.10)  # partial doc hit
-                else:
-                    score = 0.025  # parsed but no doc match
-            rewards.append(score)
+            if tp > 0 or score > 0.01:
+                # Real signal: scale by per-task multiplier, cap at 0.97
+                final = min(score * multiplier, 0.97)
+            elif pm > 0:
+                # Partial doc match: right document, wrong error type
+                # Smooth ladder: 0.08 + 0.02 per additional partial match
+                partial_score = min(0.08 + pm * 0.02, 0.20)
+                final = partial_score * multiplier
+                final = min(final, 0.25)  # cap partial credit
+            else:
+                # Findings parsed but zero doc matches — small bump above floor
+                # (more than 0.03 so it's distinguishable from no-findings)
+                final = 0.06
+
+            rewards.append(round(max(0.01, min(0.97, final)), 4))
+
         except Exception as e:
             print(f"[REWARD ERROR] {e}")
             rewards.append(0.01)
@@ -268,16 +308,17 @@ grpo_config = GRPOConfig(
     output_dir=ADAPTER_DIR,
     num_train_epochs=TRAIN_EPOCHS,
     per_device_train_batch_size=BATCH_SIZE,
-    num_generations=NUM_GENERATIONS,
-    max_completion_length=MAX_COMPLETION,
+    num_generations=NUM_GENERATIONS,      # 8 — creates within-group reward variance
+    max_completion_length=MAX_COMPLETION,  # 512 — prevents JSON truncation
     max_prompt_length=MAX_SEQ_LENGTH - MAX_COMPLETION,
-    learning_rate=LEARNING_RATE,
-    max_grad_norm=1.0,
+    learning_rate=LEARNING_RATE,           # 5e-6 — stable multi-task fine-tuning
+    max_grad_norm=0.5,                     # Tightened from 1.0 — prevents gradient spikes
+    temperature=0.7,                       # FIXED: add temperature so group completions differ
     logging_steps=LOGGING_STEPS,
     save_steps=SAVE_STEPS,
     report_to="none",
-    bf16=True,  # A10G uses bf16
-    beta=0.0,   # Disable KL penalty -> frees reference model from VRAM (~5 GiB savings)
+    bf16=True,                             # A10G uses bf16
+    beta=0.04,                             # FIXED: was 0.0 — light KL prevents catastrophic forgetting
 )
 trainer = GRPOTrainer(
     model=model,
@@ -355,16 +396,81 @@ from huggingface_hub import HfApi, upload_folder, whoami
 user = whoami()["name"]
 api = HfApi()
 
-# Upload adapter
+# ── 5a: Save & upload LoRA adapter ──────────────────────────────────────────
 adapter_repo = f"{user}/financial-audit-grpo-adapter"
 api.create_repo(repo_id=adapter_repo, repo_type="model", exist_ok=True)
 upload_folder(repo_id=adapter_repo, folder_path=ADAPTER_DIR, repo_type="model")
 print(f"  Adapter  : https://huggingface.co/{adapter_repo}")
 
-# Upload artifacts
+# ── 5b: Merge adapter into full model & push (usable without PEFT) ──────────
+MERGED_DIR = "./grpo-financial-audit-merged"
+os.makedirs(MERGED_DIR, exist_ok=True)
+try:
+    print(f"  Merging LoRA adapter into base model...")
+    merged_model = model.merge_and_unload()
+    merged_model.save_pretrained(MERGED_DIR)
+    tokenizer.save_pretrained(MERGED_DIR)
+    merged_repo = f"{user}/financial-audit-llama-3.1-8B"
+    api.create_repo(repo_id=merged_repo, repo_type="model", exist_ok=True)
+    # Write a model card
+    card_text = f"""---
+language: en
+license: llama3
+tags:
+  - financial-audit
+  - grpo
+  - llama-3.1
+  - fine-tuned
+base_model: meta-llama/Meta-Llama-3.1-8B-Instruct
+---
+
+# Financial Audit LLaMA 3.1-8B (GRPO Fine-tuned)
+
+Fine-tuned from `meta-llama/Meta-Llama-3.1-8B-Instruct` using GRPO reinforcement learning
+on the [financial_audit_env](https://huggingface.co/spaces/balloonmann/financial_audit_env) benchmark.
+
+## Tasks Trained On
+- **expense_audit** — Expense policy violation detection (easy)
+- **invoice_match** — Three-way invoice/PO/GRN match audit (medium)
+- **gst_reconciliation** — GST return reconciliation (hard)
+- **fraud_detection** — Fraud pattern detection (expert)
+
+## Training Details
+- Base model: `meta-llama/Meta-Llama-3.1-8B-Instruct`
+- Method: GRPO with per-task reward multipliers
+- LoRA rank: {LORA_R}, alpha: {LORA_ALPHA}
+- LoRA targets: attention + MLP layers
+- Epochs: {TRAIN_EPOCHS}, LR: {LEARNING_RATE}
+- Num generations: {NUM_GENERATIONS}
+
+## Evaluation Results (Held-out)
+| Task | Baseline Score | Trained Score |
+|------|---------------|---------------|
+| expense_audit | {BASELINE_SCORE:.4f} | {trained_df[trained_df.task_id=='expense_audit']['score'].mean():.4f} |
+| invoice_match | {BASELINE_SCORE:.4f} | {trained_df[trained_df.task_id=='invoice_match']['score'].mean():.4f} |
+| gst_reconciliation | {BASELINE_SCORE:.4f} | {trained_df[trained_df.task_id=='gst_reconciliation']['score'].mean():.4f} |
+| fraud_detection | {BASELINE_SCORE:.4f} | {trained_df[trained_df.task_id=='fraud_detection']['score'].mean():.4f} |
+
+## Usage
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+model = AutoModelForCausalLM.from_pretrained("{merged_repo}")
+tokenizer = AutoTokenizer.from_pretrained("{merged_repo}")
+```
+"""
+    with open(f"{MERGED_DIR}/README.md", "w") as f:
+        f.write(card_text)
+    upload_folder(repo_id=merged_repo, folder_path=MERGED_DIR, repo_type="model")
+    print(f"  Merged   : https://huggingface.co/{merged_repo}")
+except Exception as e:
+    print(f"  [WARN] Merge/push failed (adapter still uploaded): {e}")
+
+# ── 5c: Upload eval artifacts ────────────────────────────────────────────────
 artifact_repo = f"{user}/financial-audit-eval-artifacts"
 api.create_repo(repo_id=artifact_repo, repo_type="dataset", exist_ok=True)
 upload_folder(repo_id=artifact_repo, folder_path=ARTIFACTS_DIR, repo_type="dataset")
 print(f"  Artifacts: https://huggingface.co/datasets/{artifact_repo}")
 
-print(f"\n[{datetime.now()}] ✓ Training complete!")
+print(f"\n[{datetime.now()}] ✓ Training + publication complete!")
+print(f"  Merged model : https://huggingface.co/{user}/financial-audit-llama-3.1-8B")
+print(f"  LoRA adapter : https://huggingface.co/{user}/financial-audit-grpo-adapter")
